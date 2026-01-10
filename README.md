@@ -10,7 +10,7 @@ v5gdb is a debugger backend for the VEX V5 platform that is compatible with GDB 
 - Remote management of dynamically-placed software breakpoints
 - Single-stepping and hardware breakpoints
 - On-device debugger setup via Rust and C APIs
-- Easy integrate with existing VEX frameworks, including vexide, PROS, and VEXcode.
+- Easy to add to existing VEX projects, including vexide, PROS, and VEXcode projects.
 
 ## Design
 
