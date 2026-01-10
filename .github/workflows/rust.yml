@@ -1,43 +1,55 @@
 name: Rust
 
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
     check:
-        name: Check
+        name: Build
         runs-on: ubuntu-latest
         steps:
             - name: Setup | Checkout
-              uses: actions/checkout@v2
+              uses: actions/checkout@v6
 
             - name: Setup | Toolchain
-              uses: dtolnay/rust-toolchain@master
-              with:
-                  profile: minimal
-                  toolchain: nightly
-                  components: rust-src
+              run: rustup toolchain install --profile minimal
 
-            - name: Check
-              uses: actions-rs/cargo@v1
-              with:
-                  command: check
-                  args: --target=armv7a-vex-v5 -Zbuild-std=std,panic_abort -Zbuild-std-features=compiler-builtins-mem
+            - name: Setup | Build cache
+              uses: Swatinem/rust-cache@v2
 
-    test:
-        name: Test
+            - name: Check (VEXos)
+              run: cargo check --all-targets
+    lint:
+        name: Lint
         runs-on: ubuntu-latest
         steps:
             - name: Setup | Checkout
-              uses: actions/checkout@v2
+              uses: actions/checkout@v6
 
             - name: Setup | Toolchain
-              uses: dtolnay/rust-toolchain@master
-              with:
-                  profile: minimal
-                  toolchain: nightly
-                  components: rust-src
+              run: rustup toolchain install --profile minimal
 
-            - name: Check
-              uses: actions-rs/cargo@v1
-              with:
-                  command: test
+            - name: Setup | Install clippy
+              run: rustup component add clippy
+
+            - name: Setup | Build cache
+              uses: Swatinem/rust-cache@v2
+
+            - name: Clippy
+              run: cargo clippy --all-targets
+              env:
+                RUSTFLAGS: "-Dwarnings"
+    fmt:
+        name: Rustfmt
+        runs-on: ubuntu-latest
+        steps:
+            - name: Setup | Checkout
+              uses: actions/checkout@v6
+
+            - name: Setup | Toolchain
+              run: rustup toolchain install --profile minimal
+
+            - name: Setup | Install Rustfmt
+              run: rustup component add rustfmt
+
+            - name: Check formatting
+              run: cargo fmt --all --check
