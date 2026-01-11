@@ -119,6 +119,7 @@ dependencies = [
  "arbitrary-int 2.0.0",
  "arm-targets",
  "bitbybit",
+ "critical-section",
  "num_enum",
  "thiserror",
 ]

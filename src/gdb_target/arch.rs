@@ -1,5 +1,10 @@
 use std::arch::asm;
 
+use cortex_ar::{
+    asm::{dsb, isb},
+    register::Sctlr,
+};
+use critical_section::CriticalSection;
 use gdbstub::arch::Arch;
 use gdbstub_arch::arm::{
     ArmBreakpointKind,
@@ -26,38 +31,46 @@ impl Arch for ArmV7 {
     }
 }
 
-fn access_protected_mmio<T>(inner: impl FnOnce() -> T) -> T {
-    // Disable MMU
+/// Temporarily disable MMU protections, execute a function in a critical section, then restore
+/// previous state.
+///
+/// # Safety
+///
+/// This works by disabling the MMU and data-cache to make all memory behave like device memory, but
+/// there might still be a dirty cache left over for the memory you are accessing. Therefore, the
+/// caller must take care to clean any possible dirty d-cache before accessing any memory.
+#[inline]
+unsafe fn access_protected_mmio<T>(_cs: CriticalSection<'_>, inner: impl FnOnce() -> T) -> T {
+    // FIQs should be off too since their handlers might expect the MMU to work properly.
     unsafe {
-        asm!(
-            "cpsid if", // Enter critical section
-            "mrc p15, 0, r0, c1, c0, 0", // r0 = SCTLR
-            "bic r0, r0, #0x1", // r0.M bit = 0
-            "dsb", // Memory barriers before MMU manipulation
-            "isb",
-            "mcr p15, 0, r0, c1, c0, 0", // SCTLR = r0
-            "isb", // Is this needed?
-            options(nostack),
-            lateout("r0") _,
-        );
+        asm!("cpsid f", options(nomem, nostack, preserves_flags));
     }
 
-    let ret = inner();
+    let orig_sctlr = Sctlr::read();
 
-    // Enable MMU
+    // Wait for pending writes to finish before updating MMU.
+    dsb();
+
+    Sctlr::write(
+        orig_sctlr
+            .with_m(false) // No MMU
+            .with_c(false), // No d-cache (write directly to device memory)
+    );
+    // Wait for SCTLR update to finish.
+    isb();
+
+    let res = inner();
+    // Wait for device memory to be finished updating.
+    dsb();
+
+    Sctlr::write(orig_sctlr);
+    // Wait for SCTLR update to finish.
+    isb();
+
+    // Re-enable FIQs
     unsafe {
-        asm!(
-            "mrc p15, 0, r0, c1, c0, 0", // r0 = SCTLR
-            "orr r0, r0, #0x1", // r0.M bit = 1
-            "dsb", // Memory barriers before MMU manipulation
-            "isb",
-            "mcr p15, 0, r0, c1, c0, 0", // SCTLR = r0
-            "isb",
-            "cpsie if", // Exit critical section
-            options(nostack),
-            lateout("r0") _,
-        );
+        asm!("cpsie f", options(nomem, nostack, preserves_flags));
     }
 
-    ret
+    res
 }

@@ -43,7 +43,7 @@ critical-section = "1.2.0"
 bitbybit = "1.4.0"
 arbitrary-int = "2.0.0"
 derive-mmio = "0.6.1"
-cortex-ar = "0.3.0"
+cortex-ar = { version = "0.3.0", features = ["critical-section-single-core"] }
 vex-sdk = "0.28.0"
 snafu = { version = "0.8.9", default-features = false, features = ["rust_1_81"] }
 vexide-devices = { version = "0.8.0", default-features = false }

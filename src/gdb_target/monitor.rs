@@ -32,7 +32,10 @@ impl MonitorCmd for V5Target {
             gdbstub::outputln!(out, "Commands:");
             gdbstub::outputln!(out, " - monitor breaks         (View internal breakpoints)");
             gdbstub::outputln!(out, " - monitor mkbreak <ADDR> (Create breakpoint)");
-            gdbstub::outputln!(out, " - monitor hwshow         (Show hardware break status)");
+            gdbstub::outputln!(
+                out,
+                " - monitor hwshow         (Show hardware break status)"
+            );
         }
 
         Ok(())

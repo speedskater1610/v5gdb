@@ -1,14 +1,16 @@
 use std::fmt::{self, Debug, Formatter};
 
 use arbitrary_int::*;
+use cortex_ar::cache::clean_and_invalidate_data_cache_line_to_poc;
 use gdbstub_arch::arm::ArmBreakpointKind;
 use snafu::Snafu;
 use zynq7000::devcfg::MmioDevCfg;
 
 use crate::{
+    cache,
     gdb_target::arch::access_protected_mmio,
     regs::{
-        BreakpointType, DebugID, DebugLogic, DebugEventReason, DebugROMAddress,
+        BreakpointType, DebugEventReason, DebugID, DebugLogic, DebugROMAddress,
         DebugSelfAddressOffset, DebugStatusControl, DebugValid, DebugVersion, MmioDebugLogic,
         PrivilegeModeFilter, SecureDebugEnable, SecurityFilter,
     },
@@ -35,24 +37,34 @@ impl HwBreakpointManager {
     /// - Hardware debugging is locked by the board.
     /// - The device has no MMIO interface for debug registers.
     pub fn setup(devcfg: &mut MmioDevCfg<'_>) -> Self {
-        // Enable access to the board's debug hardware.
-        let enabled = access_protected_mmio(|| {
-            // Code that runs before us might have disabled writes to the debug logic, so fail early
-            // if it's locked OFF.
-            let lock = devcfg.read_lock();
-            if lock.debug() {
-                let ctrl = devcfg.read_control();
-                return ctrl.invasive_debug_enable() && ctrl.secure_invasive_debug_enable();
+        // Enable access to the board's debug hardware. The devcfg registers are protected against
+        // accidental writes, so we have to do extra work to access them or else we get a data abort
+        // with "Permission fault (MMU)".
+        let enabled = critical_section::with(|cs| {
+            unsafe {
+                // SAFETY: We clean & invalidate dirty cache for any MMIO memory accesses.
+                access_protected_mmio(cs, || {
+                    clean_and_invalidate_data_cache_line_to_poc(devcfg.pointer_to_control() as u32);
+
+                    // Code that runs before us might have disabled writes to the debug logic, so
+                    // fail early if it's locked OFF.
+                    let lock = devcfg.read_lock();
+                    if lock.debug() {
+                        let ctrl = devcfg.read_control();
+                        return ctrl.invasive_debug_enable() && ctrl.secure_invasive_debug_enable();
+                    }
+
+                    // Enable the CPU's invasive debug features.
+                    devcfg.modify_control(|ctrl| {
+                        ctrl.with_invasive_debug_enable(true)
+                            .with_secure_invasive_debug_enable(true)
+                    });
+
+                    true
+                })
             }
-
-            // Enable the CPU's invasive debug features.
-            devcfg.modify_control(|ctrl| {
-                ctrl.with_invasive_debug_enable(true)
-                    .with_secure_invasive_debug_enable(true)
-            });
-
-            true
         });
+
         assert!(
             enabled,
             "The operating system has disabled hardware debugging."

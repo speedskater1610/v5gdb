@@ -44,7 +44,7 @@ pub fn sync_instruction(target: CacheTarget) {
 /// as other caches and translation table walks) are guaranteed to see the changes, but the
 /// changes aren't guaranteed to be visible to external agents that can access the memory.
 #[inline]
-fn clean_dcache_to_unification(target: CacheTarget) {
+pub fn clean_dcache_to_unification(target: CacheTarget) {
     unsafe {
         match target {
             CacheTarget::Address(addr) => {

@@ -271,10 +271,10 @@ pub struct BreakpointControl {
     /// A bitfield that controls which addresses inside the 4-byte breakpoint value will cause a
     /// hit.
     ///
-    /// Setting any number bit will enable hits on an addresses ending in that number. For instance,
-    /// setting bit zero (0bxxx1) will enable hits on addresses ending with 0 (i.e. 0bxx…xx00),
-    /// whereas setting bit three (0b1xxx) will enable hits on addresses ending with 3
-    /// (i.e. 0bxx…xx11).
+    /// Setting any number bit will enable hits on an addresses ending in that number. For
+    /// instance, setting bit zero (0bxxx1) will enable hits on addresses ending with 0 (i.e.
+    /// 0bxx…xx00), whereas setting bit three (0b1xxx) will enable hits on addresses ending
+    /// with 3 (i.e. 0bxx…xx11).
     ///
     /// For the purposes of this field, instructions are considered to take up multiple addresses
     /// at once depending on their size. It's not possible to set a breakpoint on half an

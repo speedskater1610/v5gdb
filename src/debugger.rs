@@ -8,7 +8,10 @@ use gdbstub::{
 };
 use snafu::Snafu;
 
-use crate::{Debugger, exception::DebugEventContext, gdb_target::V5Target, regs::DebugEventReason, transport::Transport};
+use crate::{
+    Debugger, exception::DebugEventContext, gdb_target::V5Target, regs::DebugEventReason,
+    transport::Transport,
+};
 
 #[derive(Debug, Snafu)]
 pub enum DebuggerError {

@@ -1,4 +1,9 @@
-use gdbstub::{common::Signal, target::ext::base::singlethread::{SingleThreadResume, SingleThreadSingleStep, SingleThreadSingleStepOps}};
+use gdbstub::{
+    common::Signal,
+    target::ext::base::singlethread::{
+        SingleThreadResume, SingleThreadSingleStep, SingleThreadSingleStepOps,
+    },
+};
 
 use crate::gdb_target::V5Target;
 

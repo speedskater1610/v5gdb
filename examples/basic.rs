@@ -1,7 +1,7 @@
 use std::{convert::Infallible, time::Duration};
 
 use v5gdb::{
-    debugger::V5Debugger, gdb_target::arch::hw::HwBreakpointManager, transport::StdioTransport
+    debugger::V5Debugger, gdb_target::arch::hw::HwBreakpointManager, transport::StdioTransport,
 };
 use vex_sdk::{vexSerialReadChar, vexTasksRun};
 use vexide::prelude::*;
