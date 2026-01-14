@@ -45,7 +45,6 @@ impl HwBreakpointManager {
         // accidental writes, so we have to do extra work to access them or else we get a data abort
         // with "Permission fault (MMU)".
         let enabled = critical_section::with(|_| {
-            // SAFETY: We clean & invalidate dirty cache for any MMIO memory accesses.
             with_manager_domain_access(|| {
                 clean_and_invalidate_data_cache_line_to_poc(devcfg.pointer_to_control() as u32);
 
@@ -176,10 +175,9 @@ impl HwBreakpointManager {
 
         let (new_word, new_bas) = split_addr(addr, kind)?;
 
-        // First, try and find an existing breakpoint at the given word to avoid making a new one.
-        // (This is possible for Thumb instructions, where 2 can be in the same word.)
         let mut next_disabled_idx = None;
 
+        // Check for duplicate breakpoint.
         for idx in 0..self.capabilities.num_breakpoints {
             let existing_bkpt = self.mmio.read_breakpoint_ctrl(idx as usize).unwrap();
             let existing_word = self.mmio.read_breakpoint_value(idx as usize).unwrap();
@@ -202,6 +200,7 @@ impl HwBreakpointManager {
             }
         }
 
+        // No duplicates, so now we insert a new breakpoint.
         let Some(bkpt_index) = next_disabled_idx else {
             return Err(BreakpointError::NoSpace);
         };
