@@ -11,6 +11,9 @@ repository = "https://github.com/vexide/v5gdb"
 homepage = "https://internals.vexide.dev/technical/debugger"
 rust-version = "1.93"
 
+[workspace]
+members = ["xtask"]
+
 [profile.release]
 opt-level = "z"
 lto = "fat"
@@ -38,9 +41,18 @@ snafu = { version = "0.8.9", default-features = false, features = [
 vexide-devices = { version = "0.8.0", default-features = false }
 
 [dev-dependencies]
-vexide = { git = "https://github.com/vexide/vexide.git", branch = "refactor/abort-stack", features = [
+anyhow = "1.0.100"
+
+[dev-dependencies.vexide]
+git = "https://github.com/vexide/vexide.git"
+branch = "refactor/abort-stack"
+features = [
     "full",
     "default-sdk",
-] }
+]
+
+[[test]]
+name = "hardware"
+harness = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

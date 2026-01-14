@@ -1,5 +1,5 @@
-[build]
-target = "armv7a-vex-v5"
+[alias]
+xtask = "run -p xtask --"
 
 [target.'cfg(target_os = "vexos")']
 rustflags = ["-Clink-arg=-Tvexide.ld"]

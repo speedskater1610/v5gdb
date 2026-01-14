@@ -105,7 +105,7 @@ impl V5Target {
     }
 }
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Snafu, PartialEq, Eq, Clone, Copy)]
 pub enum BreakpointError {
     /// There is already a breakpoint with this address.
     AlreadyExists,

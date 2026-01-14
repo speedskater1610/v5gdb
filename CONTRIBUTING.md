@@ -12,7 +12,7 @@ Since Rust's support for the VEX V5 platform is unstable, we only support some v
 rustup toolchain install
 ```
 
-After doing so, you can build the library with `cargo build`.
+After doing so, you can build the library with `cargo build --target=armv7a-vex-v5`.
 
 ### Examples
 
@@ -70,6 +70,10 @@ If you want a log of everything v5gdb is sending to GDB (e.g. to see panic messa
 ```
 target remote | cargo v5 t | tee out.log
 ```
+
+## Integration tests
+
+You can run integration tests by connecting to a brain and running `cargo xtask test`. It will upload each test in the `tests` directory and run them. The first time you run it, it will take a while to compile the code in the `xtask` directory.
 
 ## Licensing
 
