@@ -11,7 +11,7 @@ use crate::{
         arch::{ArmBreakpointKind, access_protected_mmio},
         breakpoint::BreakpointError,
     },
-    regs::{
+    regs::debug::{
         BreakpointControl, BreakpointType, DEBUG_UNLOCK_MAGIC, DebugEventReason, DebugID,
         DebugLogic, DebugROMAddress, DebugSelfAddressOffset, DebugValid, MmioDebugLogic,
         PrivilegeModeFilter, SecureDebugEnable, SecurityFilter, WatchpointControl,

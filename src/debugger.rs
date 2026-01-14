@@ -13,7 +13,7 @@ use crate::{
     Debugger,
     exception::DebugEventContext,
     gdb_target::{V5Target, breakpoint::hardware::Specificity},
-    regs::DebugEventReason,
+    regs::debug::DebugEventReason,
     transport::Transport,
 };
 
