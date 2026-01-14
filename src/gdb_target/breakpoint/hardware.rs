@@ -32,13 +32,13 @@ pub struct HwBreakpointManager {
 impl HwBreakpointManager {
     /// Sets up hardware debugging.
     ///
-    /// The returned breakpoint manager is locked by default.
+    /// The returned breakpoint manager is software locked by default.
     ///
     /// # Panics
     ///
     /// A panic is triggered if:
     ///
-    /// - Hardware debugging is locked by the board.
+    /// - CPU debug features are hardware locked by the board.
     /// - The device has no MMIO interface for debug registers.
     pub fn setup(devcfg: &mut MmioDevCfg<'_>) -> Self {
         // Enable access to the board's debug hardware. The devcfg registers are protected against
