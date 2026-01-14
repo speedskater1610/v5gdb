@@ -9,17 +9,15 @@ pub trait Transport: Connection<Error = io::Error> + ConnectionExt + Send + Clon
 
 /// Debug logging via stdio.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct StdioTransport {
-    display: Display,
 }
 
 impl StdioTransport {
     /// Create a new stdio-based transport.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            display: unsafe { Display::new() },
-        }
+        Self {}
     }
 }
 
@@ -41,13 +39,8 @@ impl Connection for StdioTransport {
     type Error = std::io::Error;
 
     fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
-        {
-            use std::fmt::Write;
-            _ = write!(self.display, "{}", byte as char);
-        }
-
         if unsafe { vexSerialWriteFree(1) } == 0 {
-            drop(self.flush());
+            self.flush().unwrap();
         }
         _ = unsafe { vexSerialWriteChar(1, byte as _) };
 
@@ -55,11 +48,6 @@ impl Connection for StdioTransport {
     }
 
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        {
-            use std::fmt::Write;
-            _ = write!(self.display, "{}", str::from_utf8(buf).unwrap());
-        }
-
         for chunk in buf.chunks(2048) {
             if unsafe { vex_sdk::vexSerialWriteFree(1) as usize } < chunk.len() {
                 self.flush().unwrap();
