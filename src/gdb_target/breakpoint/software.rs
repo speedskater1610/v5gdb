@@ -1,9 +1,8 @@
 use gdbstub::target::TargetResult;
 
 use crate::{
-    cache::CacheTarget,
+    cpu::{cache::CacheTarget, instruction::Instruction},
     gdb_target::{V5Target, arch::ArmBreakpointKind},
-    instruction::Instruction,
 };
 
 /// A software breakpoint.

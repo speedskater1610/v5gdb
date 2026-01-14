@@ -27,7 +27,7 @@ pub const fn get_cp14_encoding(register: DebugRegister) -> (u32, u32, u32) {
 macro_rules! read_dbgreg {
     ($reg:expr) => {
         unsafe {
-            const ENCODING: (u32, u32, u32) = $crate::regs::debug::get_cp14_encoding($reg);
+            const ENCODING: (u32, u32, u32) = $crate::cpu::debug::get_cp14_encoding($reg);
             let value: u32;
             core::arch::asm!(
                 "mrc p14, 0, {value}, c{CRn}, c{CRm}, {opc2}",
@@ -47,7 +47,7 @@ macro_rules! read_dbgreg {
 macro_rules! write_dbgreg {
     ($reg:expr, $value:expr) => {
         {
-            const ENCODING: (u32, u32, u32) = $crate::regs::get_cp14_encoding($reg);
+            const ENCODING: (u32, u32, u32) = $crate::cpu::debug::get_cp14_encoding($reg);
             let value: u32 = $value;
             core::arch::asm!(
                 "mcr p14, 0, {value}, c{CRn}, c{CRm}, {opc2}",

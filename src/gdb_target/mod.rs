@@ -20,8 +20,8 @@ use gdbstub::{
 use zynq7000::devcfg::MmioDevCfg;
 
 use crate::{
-    cache,
-    exception::{DebugEventContext, ProgramStatus},
+    cpu::{cache, exception::ProgramStatus},
+    exceptions::DebugEventContext,
     gdb_target::{
         arch::{ArmBreakpointKind, ArmRegisters, ArmV7},
         breakpoint::{

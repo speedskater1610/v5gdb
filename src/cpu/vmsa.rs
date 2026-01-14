@@ -1,7 +1,10 @@
 //! Access to Virtual Memory System Architecture registers.
 
 use bitbybit::bitenum;
-use cortex_ar::register::{SysReg, SysRegRead, SysRegWrite};
+use cortex_ar::{
+    asm::{dsb, isb},
+    register::{SysReg, SysRegRead, SysRegWrite},
+};
 
 /// The register for controlling permission overrides for each memory domain.
 ///
@@ -54,4 +57,29 @@ pub enum DomainPermission {
     Client = 0b01,
     /// Permissions are not checked.
     Manager = 0b11,
+}
+
+/// Temporarily disable MMU permission checks, execute a function in a critical section,
+/// then restore previous state.
+///
+/// Since a misbehaving program could corrupt device configuration, VEXos protects some lower-level
+/// config registers against accidental writes. This function can be used as a marker for
+/// "This memory is being accessed intentionally."
+#[inline]
+pub fn with_manager_domain_access<T>(inner: impl FnOnce() -> T) -> T {
+    // Each VMSA region is assigned a domain from 0-15. When a memory access happens, it reads this
+    // register to decide whether or not a permission check should be done. If the domain assigned
+    // to the given memory region is in Manager mode, no permission check is done.
+    let domain_access = DomainAccessControlRegister::read();
+    domain_access.set_all(DomainPermission::Manager).write();
+    isb(); // Wait for domain permissions change to finish.
+
+    let res = inner();
+    dsb(); // Wait for device memory changes to finish.
+
+    // Restore previous state.
+    domain_access.write();
+    isb(); // Wait for domain permissions change to finish.
+
+    res
 }

@@ -8,16 +8,14 @@ use std::{
 };
 
 use crate::{
-    exception::{DebugEventContext, install_vectors},
+    exceptions::{DebugEventContext, install_vectors},
     gdb_target::breakpoint::BreakpointError,
 };
 
-pub mod cache;
+pub mod cpu;
 pub mod debugger;
-pub mod exception;
+pub mod exceptions;
 pub mod gdb_target;
-pub mod instruction;
-pub mod regs;
 pub mod transport;
 
 pub static DEBUGGER: OnceLock<Mutex<&mut dyn Debugger>> = OnceLock::new();

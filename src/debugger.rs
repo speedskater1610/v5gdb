@@ -11,9 +11,9 @@ use zynq7000::devcfg::DevCfg;
 
 use crate::{
     Debugger,
-    exception::DebugEventContext,
+    cpu::debug::DebugEventReason,
+    exceptions::DebugEventContext,
     gdb_target::{V5Target, breakpoint::hardware::Specificity},
-    regs::debug::DebugEventReason,
     transport::Transport,
 };
 

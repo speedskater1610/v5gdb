@@ -6,16 +6,15 @@ use gdbstub::target::{TargetResult, ext::breakpoints::HwBreakpoint};
 use zynq7000::devcfg::MmioDevCfg;
 
 use crate::{
-    gdb_target::{
-        V5Target,
-        arch::{ArmBreakpointKind, access_protected_mmio},
-        breakpoint::BreakpointError,
+    cpu::{
+        debug::{
+            BreakpointControl, BreakpointType, DEBUG_UNLOCK_MAGIC, DebugEventReason, DebugID,
+            DebugLogic, DebugROMAddress, DebugSelfAddressOffset, DebugValid, MmioDebugLogic,
+            PrivilegeModeFilter, SecureDebugEnable, SecurityFilter, WatchpointControl,
+        },
+        vmsa::with_manager_domain_access,
     },
-    regs::debug::{
-        BreakpointControl, BreakpointType, DEBUG_UNLOCK_MAGIC, DebugEventReason, DebugID,
-        DebugLogic, DebugROMAddress, DebugSelfAddressOffset, DebugValid, MmioDebugLogic,
-        PrivilegeModeFilter, SecureDebugEnable, SecurityFilter, WatchpointControl,
-    },
+    gdb_target::{V5Target, arch::ArmBreakpointKind, breakpoint::BreakpointError},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,9 +44,9 @@ impl HwBreakpointManager {
         // Enable access to the board's debug hardware. The devcfg registers are protected against
         // accidental writes, so we have to do extra work to access them or else we get a data abort
         // with "Permission fault (MMU)".
-        let enabled = critical_section::with(|cs| {
+        let enabled = critical_section::with(|_| {
             // SAFETY: We clean & invalidate dirty cache for any MMIO memory accesses.
-            access_protected_mmio(cs, || {
+            with_manager_domain_access(|| {
                 clean_and_invalidate_data_cache_line_to_poc(devcfg.pointer_to_control() as u32);
 
                 // Code that runs before us might have disabled writes to the debug logic, so
