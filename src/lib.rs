@@ -20,6 +20,11 @@ pub mod transport;
 
 pub static DEBUGGER: OnceLock<Mutex<&mut dyn Debugger>> = OnceLock::new();
 
+/// Debugger implementation.
+///
+/// # Safety
+///
+/// The debugger must not corrupt the CPU state when handling debug events.
 pub unsafe trait Debugger: Send + Any {
     /// Initializes the debugger.
     fn initialize(&mut self) {}

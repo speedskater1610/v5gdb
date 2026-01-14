@@ -10,6 +10,12 @@ use crate::{
 
 core::arch::global_asm!(include_str!("./overlay.S"), options(raw));
 
+/// Handles a debug event
+///
+/// # Safety
+///
+/// Must be passed a debug event context that's valid for reads and writes and lives for the
+/// duration of this function call.
 #[unsafe(no_mangle)]
 #[instruction_set(arm::a32)]
 pub unsafe extern "aapcs" fn handle_debug_event(ctx: *mut DebugEventContext) {
