@@ -59,6 +59,14 @@ Once you've established a connection, here are some GDB commands you might want 
 - `cont` will continue execution as normal.
 - `disconnect` will disconnect unceremoniously.
 
+If you want to call functions or access values in your program from GDB, you can do so like this:
+
+```
+call vex_sdk_jumptable::display::vexDisplayForegroundColor(0xFF00FF)
+call basic::fib(40)
+print $r0
+```
+
 ## Troubleshooting
 
 If you are getting weird errors when you try connecting with GDB (or your robot crashes when you do so), you should make sure your GDB version supports the `armv7` architecture by running the command `set architecture`.

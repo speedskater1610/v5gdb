@@ -1,9 +1,11 @@
 #![allow(clippy::missing_safety_doc)]
 
-use std::convert::Infallible;
+use core::convert::Infallible;
 
 use gdbstub::{
     arch::Arch,
+    common::Signal,
+    stub::SingleThreadStopReason,
     target::{
         Target, TargetError, TargetResult,
         ext::{
@@ -13,6 +15,7 @@ use gdbstub::{
                 singlethread::{SingleThreadBase, SingleThreadResumeOps},
             },
             breakpoints::BreakpointsOps,
+            memory_map::{MemoryMap, MemoryMapOps},
             monitor_cmd::MonitorCmdOps,
         },
     },
@@ -20,7 +23,7 @@ use gdbstub::{
 use zynq7000::devcfg::MmioDevCfg;
 
 use crate::{
-    cpu::{cache, exception::ProgramStatus},
+    cpu::{ProgramStatus, debug::DebugEventReason},
     exceptions::DebugEventContext,
     gdb_target::{
         arch::{ArmBreakpointKind, ArmRegisters, ArmV7},
@@ -40,11 +43,17 @@ pub mod single_register_access;
 
 /// Debugger state storage.
 pub struct V5Target {
-    pub exception_ctx: Option<DebugEventContext>,
+    pub exception_ctx: DebugEventContext,
     /// Indicates whether the debugger monitor loop should stop, allowing the program to continue
     /// execution.
     pub resume: bool,
+    /// Indicates whether the program is exiting.
+    ///
+    /// If this goes back to `false`, an exit has been acknowledged by GDB.
+    pub exiting: bool,
 
+    /// Indicates whether new software breakpoints should be enabled.
+    pub breaks_paused: bool,
     /// The list of breakpoints.
     pub breaks: [Option<SwBreakpoint>; 16],
     pub hw_manager: HwBreakpointManager,
@@ -71,8 +80,10 @@ impl V5Target {
     #[must_use]
     pub fn new(devcfg: &mut MmioDevCfg<'_>) -> Self {
         Self {
-            exception_ctx: None,
+            exception_ctx: DebugEventContext::default(),
             resume: false,
+            exiting: false,
+            breaks_paused: false,
             breaks: [None; _],
             single_step_request: None,
             hw_manager: HwBreakpointManager::setup(devcfg),
@@ -89,32 +100,61 @@ impl V5Target {
         self.resume = true;
     }
 
+    /// Marks the program as pending exit.
+    ///
+    /// If this is called before entering a debug monitor loop, the debugger will tell GDB that the
+    /// program has exited. This will cause the debug monitor to immediately stop, and control will
+    /// return to the program to do any final clean-up.
+    pub const fn exit_request(&mut self) {
+        self.exiting = true;
+    }
+
     /// Prepare the debugger to resume, step one instruction, then stop again.
     pub fn setup_step(&mut self) -> Result<(), BreakpointError> {
-        let exception_ctx = self
-            .exception_ctx
-            .as_ref()
-            .expect("The debugger target has no exception context set");
-
-        let kind = if exception_ctx.spsr.is_thumb() {
+        let kind = if self.exception_ctx.spsr.thumb() {
             ArmBreakpointKind::Thumb16
         } else {
             ArmBreakpointKind::Arm32
         };
 
         self.hw_manager.add_breakpoint_at(
-            exception_ctx.program_counter,
+            self.exception_ctx.program_counter,
             Specificity::Mismatch,
             kind,
         )?;
 
         self.resume = true;
         self.single_step_request = Some(SingleStepRequest {
-            target_addr: exception_ctx.program_counter,
+            target_addr: self.exception_ctx.program_counter,
             kind,
         });
 
         Ok(())
+    }
+
+    pub fn get_stop_reason(&self) -> SingleThreadStopReason<u32> {
+        if self.exiting {
+            return SingleThreadStopReason::Exited(0);
+        }
+
+        let reason = self.hw_manager.last_break_reason();
+
+        if reason == Some(DebugEventReason::Breakpoint) {
+            // Hardware breakpoints are also used for single stepping, and we should report
+            // that differently.
+            // TODO: If both a single step and a hardware breakpoint are triggered, how
+            // should be handle both? Right now, this logic will prioritize the single step,
+            // but we might want it to be the other way around.
+            if self.single_step_request.is_some() {
+                SingleThreadStopReason::DoneStep
+            } else {
+                SingleThreadStopReason::HwBreak(())
+            }
+        } else {
+            // GDB interprets this as a software breakpoint if there is one, but will halt
+            // even if the user didn't explicitly set one.
+            SingleThreadStopReason::Signal(Signal::SIGTRAP)
+        }
     }
 }
 
@@ -133,46 +173,48 @@ impl Target for V5Target {
     fn support_monitor_cmd(&mut self) -> Option<MonitorCmdOps<'_, Self>> {
         Some(self)
     }
+
+    fn support_memory_map(&mut self) -> Option<MemoryMapOps<'_, Self>> {
+        Some(self)
+    }
 }
 
 impl SingleThreadBase for V5Target {
     fn read_registers(&mut self, regs: &mut ArmRegisters) -> TargetResult<(), Self> {
-        if let Some(ctx) = &mut self.exception_ctx {
-            *regs = ArmRegisters {
-                r: ctx.registers,
-                sp: ctx.stack_pointer,
-                lr: ctx.link_register,
-                pc: ctx.program_counter,
-                d: ctx.vfp_registers,
-                fpscr: ctx.fpscr,
-                cpsr: ctx.spsr.to_raw(),
-            };
-        } else {
-            return Err(TargetError::NonFatal);
-        }
+        let ctx = &self.exception_ctx;
+        *regs = ArmRegisters {
+            r: ctx.registers,
+            sp: ctx.stack_pointer,
+            lr: ctx.link_register,
+            pc: ctx.program_counter,
+            d: ctx.vfp_registers,
+            fpscr: ctx.fpscr,
+            cpsr: ctx.spsr.raw_value(),
+        };
 
         Ok(())
     }
 
     fn write_registers(&mut self, regs: &<ArmV7 as Arch>::Registers) -> TargetResult<(), Self> {
-        if let Some(ctx) = &mut self.exception_ctx {
-            *ctx = DebugEventContext {
-                registers: regs.r,
-                stack_pointer: regs.sp,
-                link_register: regs.lr,
-                program_counter: regs.pc,
-                spsr: ProgramStatus(regs.cpsr),
-                vfp_registers: regs.d,
-                fpscr: regs.fpscr,
-            };
-        } else {
-            return Err(TargetError::NonFatal);
-        }
+        let ctx = &mut self.exception_ctx;
+        *ctx = DebugEventContext {
+            registers: regs.r,
+            stack_pointer: regs.sp,
+            link_register: regs.lr,
+            program_counter: regs.pc,
+            spsr: ProgramStatus::new_with_raw_value(regs.cpsr),
+            vfp_registers: regs.d,
+            fpscr: regs.fpscr,
+        };
 
         Ok(())
     }
 
     fn read_addrs(&mut self, start_addr: u32, data: &mut [u8]) -> TargetResult<usize, Self> {
+        if start_addr < 0x0300_0000 {
+            return Err(TargetError::NonFatal);
+        }
+
         // TODO: check MMU table to ensure these pages are readable.
         unsafe {
             core::ptr::copy(start_addr as *const u8, data.as_mut_ptr(), data.len());
@@ -182,6 +224,10 @@ impl SingleThreadBase for V5Target {
     }
 
     fn write_addrs(&mut self, start_addr: u32, data: &[u8]) -> TargetResult<(), Self> {
+        if start_addr < 0x0300_0000 {
+            return Err(TargetError::NonFatal);
+        }
+
         unsafe {
             core::ptr::copy(data.as_ptr(), start_addr as *mut u8, data.len());
         }
@@ -195,5 +241,24 @@ impl SingleThreadBase for V5Target {
 
     fn support_single_register_access(&mut self) -> Option<SingleRegisterAccessOps<'_, (), Self>> {
         Some(self)
+    }
+}
+
+impl MemoryMap for V5Target {
+    fn memory_map_xml(
+        &self,
+        offset: u64,
+        length: usize,
+        buf: &mut [u8],
+    ) -> TargetResult<usize, Self> {
+        let memory_map = include_bytes!("./arch/memory_map.xml");
+        if offset > memory_map.len() as u64 {
+            return Ok(0);
+        }
+        let slice = &memory_map[offset as usize..];
+        let count = slice.len().min(length);
+        buf[..count].copy_from_slice(&slice[..count]);
+        println!("Done to copy");
+        Ok(count)
     }
 }

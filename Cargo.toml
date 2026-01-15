@@ -16,7 +16,7 @@ members = ["xtask"]
 
 [profile.release]
 opt-level = "z"
-lto = "fat"
+lto = false
 debug = true
 
 # These fields configure default behavior for uploads with `cargo v5`.

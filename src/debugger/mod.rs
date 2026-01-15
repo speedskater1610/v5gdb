@@ -1,7 +1,8 @@
-use std::convert::Infallible;
+//! Main debugger loop and event handling logic.
+
+use core::convert::Infallible;
 
 use gdbstub::{
-    common::Signal,
     stub::{
         GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
     },
@@ -12,10 +13,16 @@ use zynq7000::devcfg::DevCfg;
 use crate::{
     Debugger,
     cpu::debug::DebugEventReason,
+    debugger::sdk::InternalBreakpoint,
     exceptions::DebugEventContext,
-    gdb_target::{V5Target, breakpoint::hardware::Specificity},
+    gdb_target::{
+        V5Target,
+        breakpoint::hardware::Specificity,
+    },
     transport::Transport,
 };
+
+pub mod sdk;
 
 #[derive(Debug, Snafu)]
 pub enum DebuggerError {
@@ -30,6 +37,7 @@ pub enum DebuggerError {
 /// Debugger state machine for handling remote connections.
 pub struct V5Debugger<S: Transport> {
     target: V5Target,
+    internal_breaks: Option<[(InternalBreakpoint, u32); 1]>,
     stream: S,
     gdb_buffer: Option<&'static mut [u8]>,
     gdb: Option<GdbStubStateMachine<'static, V5Target, S>>,
@@ -41,6 +49,7 @@ impl<S: Transport> V5Debugger<S> {
     pub fn new(stream: S) -> Self {
         Self {
             target: V5Target::new(&mut unsafe { DevCfg::new_mmio_fixed() }),
+            internal_breaks: None,
             stream,
             gdb_buffer: Some(Box::leak(vec![0; 0x2000].into_boxed_slice())),
             gdb: None,
@@ -60,25 +69,14 @@ impl<S: Transport> V5Debugger<S> {
                 }
             }
             GdbStubStateMachine::Running(gdb) => {
-                let reason = target.hw_manager.last_break_reason();
-
-                let reported_reason = if reason == Some(DebugEventReason::Breakpoint) {
-                    // Hardware breakpoints are also used for single stepping, and we should report
-                    // that differently.
-                    // TODO: If both a single step and a hardware breakpoint are triggered, how
-                    // should be handle both? Right now, this logic will prioritize the single step,
-                    // but we might want it to be the other way around.
-                    if target.single_step_request.is_some() {
-                        SingleThreadStopReason::DoneStep
-                    } else {
-                        SingleThreadStopReason::HwBreak(())
-                    }
-                } else {
-                    // GDB interprets this as a software breakpoint if there is one, but will halt
-                    // even if the user didn't explicitly set one.
-                    SingleThreadStopReason::Signal(Signal::SIGTRAP)
-                };
+                let reported_reason = target.get_stop_reason();
                 target.single_step_request = None;
+
+                // Once we tell GDB we've exited we should exit the monitor because the session will
+                // end.
+                if matches!(reported_reason, SingleThreadStopReason::Exited(_)) {
+                    target.resume = true;
+                }
 
                 Ok(gdb.report_stop(target, reported_reason)?)
             }
@@ -114,7 +112,9 @@ impl<S: Transport> V5Debugger<S> {
 
         self.target.reset_resume();
         while !self.target.resume {
-            std::thread::yield_now();
+            unsafe {
+                vex_sdk::vexTasksRun();
+            }
 
             gdb = Self::drive_state_machine(gdb, &mut self.target)
                 .expect("debugger encountered an error");
@@ -126,24 +126,32 @@ impl<S: Transport> V5Debugger<S> {
 }
 
 unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
+    fn initialize(&mut self) {
+        self.register_internal_breakpoints();
+    }
+
     unsafe fn register_breakpoint(
         &mut self,
         addr: u32,
         thumb: bool,
     ) -> Result<(), crate::gdb_target::breakpoint::BreakpointError> {
-        unsafe { self.target.register_sw_breakpoint(addr, thumb) }
+        unsafe { self.target.register_sw_breakpoint(addr, thumb, false) }
     }
 
     unsafe fn handle_debug_event(&mut self, ctx: &mut DebugEventContext) {
+        self.target.set_breakpoints_ignored(true);
+
         let was_locked = self.target.hw_manager.locked();
         self.target.hw_manager.set_locked(false);
-
-        self.target.exception_ctx = Some(*ctx);
+        self.target.exception_ctx = ctx.clone();
 
         let reason = self.target.hw_manager.last_break_reason();
 
-        let tracked_bkpt = self.target.query_sw_breakpoint(ctx.program_counter);
-        let is_manual_bkpt = tracked_bkpt.is_none() && reason == Some(DebugEventReason::BkptInstr);
+        let bkpt_address = self.target.exception_ctx.program_counter;
+        let tracked_bkpt_id = self.target.query_sw_breakpoint(bkpt_address);
+
+        let is_manual_bkpt =
+            tracked_bkpt_id.is_none() && reason == Some(DebugEventReason::BkptInstr);
 
         // If we previously wanted to single step, we can permanently remove the breakpoint that
         // supported that now. The saved single step request isn't removed yet so that the stop
@@ -165,12 +173,34 @@ unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
 
             // SAFETY: Since the address was able to be properly fetched, it implies it is valid for
             // reads.
-            let instr = unsafe { ctx.read_instr() };
-            ctx.program_counter += instr.size() as u32;
+            let instr = unsafe { self.target.exception_ctx.read_instr() };
+            self.target.exception_ctx.program_counter += instr.size() as u32;
         }
 
-        self.run_debug_console();
+        let mut show_debug_console = true;
+
+        if let Some(id) = tracked_bkpt_id
+            && let Some(bkpt) = self.target.breaks[id]
+        {
+            // Some tracked breakpoints weren't requested by the user and are just used internally.
+            // These should be transparent to the user by default. Note: It's possible
+            // for a breakpoint to be both requested by the user and used internally.
+            show_debug_console = bkpt.reason.user;
+
+            // If this breakpoint is used internally, run any necessary callbacks.
+            if bkpt.reason.internal {
+                show_debug_console |= self.handle_internal_breakpoint();
+            }
+        }
+
+        if show_debug_console {
+            self.run_debug_console();
+        }
+
+        // Write any modifications back to the stack so the assembly code restores the updated state
+        *ctx = self.target.exception_ctx.clone();
 
         self.target.hw_manager.set_locked(was_locked);
+        self.target.set_breakpoints_ignored(false);
     }
 }

@@ -1,11 +1,15 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    arch::asm,
+    array,
+    ffi::c_void,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+use cortex_ar::asm::dsb;
 
 use crate::{
     DEBUGGER,
-    cpu::{
-        exception::{ProgramStatus, vbar},
-        instruction::Instruction,
-    },
+    cpu::{ProgramStatus, exception::VectorBaseAddressRegister, instruction::Instruction},
 };
 
 core::arch::global_asm!(include_str!("./overlay.S"), options(raw));
@@ -34,32 +38,30 @@ static ORIGINAL_VECTOR_ADDRESSES_SET: AtomicBool = AtomicBool::new(false);
 
 pub fn install_vectors() {
     unsafe extern "C" {
+        static debugger_vector_table: c_void;
         static mut original_vector_addresses: [u32; 8];
     }
 
     if !ORIGINAL_VECTOR_ADDRESSES_SET.swap(true, Ordering::Relaxed) {
-        let old_vbar = vbar();
+        let old_vbar = VectorBaseAddressRegister::read();
 
         unsafe {
-            core::arch::asm!("cpsid if", options(nostack));
+            // No exceptions should be allowed to occur while updating the vector table, since the
+            // vector table is responsible for handling those exceptions.
+            asm!("cpsid if", options(nostack, nomem, preserves_flags));
 
-            #[allow(clippy::needless_range_loop)]
-            for i in 0..8 {
-                original_vector_addresses[i] = (old_vbar as *mut u32).add(i) as _;
-            }
+            original_vector_addresses =
+                array::from_fn(|i| old_vbar.ptr().byte_add(i * size_of::<u32>()) as u32);
 
-            core::arch::asm!("cpsie if", options(nostack));
+            dsb();
+
+            asm!("cpsie if", options(nostack, nomem, preserves_flags));
         }
     }
 
     unsafe {
-        core::arch::asm!(
-            "movw r0, #:lower16:debugger_vector_table",
-            "movt r0, #:upper16:debugger_vector_table",
-            "mcr p15, 0, r0, c12, c0, 0",
-            out("r0") _,
-            options(nostack, preserves_flags)
-        );
+        let overlay_table_ptr = &raw const debugger_vector_table;
+        VectorBaseAddressRegister::new(overlay_table_ptr.cast()).write();
     }
 }
 
@@ -67,7 +69,7 @@ pub fn install_vectors() {
 ///
 /// Note that updating these fields will cause the exception handler to apply the changes to the CPU
 /// if/when the current exception handler returns.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[repr(C)]
 pub struct DebugEventContext {
     /// The saved program status register (spsr) from before the exception.
@@ -87,19 +89,8 @@ pub struct DebugEventContext {
 
     /// The address at which the abort occurred.
     ///
-    /// This is calculated using the Link Register (`lr`), which is set to this address plus an
-    /// offset when an exception occurs.
-    ///
-    /// Offsets:
-    ///
-    /// * [plus 8 bytes][da-exception] for data aborts.
-    /// * [plus 4 bytes][pf-exception] for prefetch aborts.
-    /// * [plus the size of an instruction][svc-exception] for SVCs and undefined instruction
-    ///   aborts (this is different in thumb mode).
-    ///
-    /// [da-exception]: https://developer.arm.com/documentation/ddi0406/b/System-Level-Architecture/The-System-Level-Programmers--Model/Exceptions/Data-Abort-exception
-    /// [pf-exception]: https://developer.arm.com/documentation/ddi0406/b/System-Level-Architecture/The-System-Level-Programmers--Model/Exceptions/Prefetch-Abort-exception
-    /// [svc-exception]: https://developer.arm.com/documentation/ddi0406/b/System-Level-Architecture/The-System-Level-Programmers--Model/Exceptions/Supervisor-Call--SVC--exception
+    /// This is calculated using the Link Register (`lr`) at abort time, which is set to this
+    /// address plus an offset when an exception occurs.
     pub program_counter: u32,
 }
 
@@ -113,7 +104,7 @@ impl DebugEventContext {
     /// inaccessible.
     #[must_use]
     pub unsafe fn read_instr(&self) -> Instruction {
-        if self.spsr.is_thumb() {
+        if self.spsr.thumb() {
             let ptr = self.program_counter as *mut u16;
             Instruction::Thumb(unsafe { ptr.read_volatile() })
         } else {

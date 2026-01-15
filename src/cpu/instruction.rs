@@ -41,8 +41,11 @@ impl Instruction {
     pub unsafe fn read(addr: *const u32, thumb: bool) -> Self {
         debug_assert!(!addr.is_null());
         if thumb {
-            Self::Thumb(unsafe { core::ptr::read_volatile(addr.cast()) })
+            let addr = addr.cast::<u16>();
+            assert!(addr.is_aligned());
+            Self::Thumb(unsafe { core::ptr::read_volatile(addr) })
         } else {
+            assert!(addr.is_aligned());
             Self::Arm(unsafe { core::ptr::read_volatile(addr) })
         }
     }

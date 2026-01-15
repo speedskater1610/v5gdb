@@ -59,8 +59,8 @@ pub enum DomainPermission {
     Manager = 0b11,
 }
 
-/// Temporarily disable MMU permission checks, execute a function in a critical section,
-/// then restore previous state.
+/// Runs a function with "Manager" access on all memory domains. This temporarily bypasses MMU
+/// permission checks on the translation table.
 ///
 /// Since a misbehaving program could corrupt device configuration, VEXos protects some lower-level
 /// config registers against accidental writes. This function can be used as a marker for

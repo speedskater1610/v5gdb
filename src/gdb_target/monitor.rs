@@ -19,7 +19,7 @@ impl MonitorCmd for V5Target {
             }
         } else if cmd.starts_with("mk") {
             if let Ok(addr) = u32::from_str_radix(parts.next().unwrap_or_default(), 16) {
-                let res = unsafe { self.register_sw_breakpoint(addr, false) };
+                let res = unsafe { self.register_sw_breakpoint(addr, false, false) };
 
                 gdbstub::outputln!(out, "{res:x?}");
             } else {
@@ -27,6 +27,8 @@ impl MonitorCmd for V5Target {
             }
         } else if cmd.starts_with("hw") {
             gdbstub::outputln!(out, "{:#x?}", self.hw_manager);
+        } else if cmd.starts_with("ctx") {
+            gdbstub::outputln!(out, "{:#x?}", self.exception_ctx);
         } else {
             gdbstub::outputln!(out, "Unknown command.\n");
             gdbstub::outputln!(out, "Commands:");

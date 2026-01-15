@@ -1,4 +1,4 @@
-use std::fmt::{self, Debug, Formatter};
+use core::fmt::{self, Debug, Formatter};
 
 use arbitrary_int::*;
 use cortex_ar::cache::clean_and_invalidate_data_cache_line_to_poc;

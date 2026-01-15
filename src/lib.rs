@@ -1,11 +1,8 @@
 #![allow(missing_docs)]
 #![cfg(target_arch = "arm")]
 
-use std::{
-    any::Any,
-    arch::asm,
-    sync::{Mutex, OnceLock},
-};
+use std::sync::{Mutex, OnceLock};
+use core::{any::Any, arch::asm};
 
 use crate::{
     exceptions::{DebugEventContext, install_vectors},
@@ -27,7 +24,7 @@ pub static DEBUGGER: OnceLock<Mutex<&mut dyn Debugger>> = OnceLock::new();
 /// The debugger must not corrupt the CPU state when handling debug events.
 pub unsafe trait Debugger: Send + Any {
     /// Initializes the debugger.
-    fn initialize(&mut self) {}
+    fn initialize(&mut self);
 
     /// Registers a breakpoint at the specified address.
     ///
@@ -60,7 +57,10 @@ pub fn install(debugger: impl Debugger + 'static) {
         .set(Mutex::new(Box::leak(Box::new(debugger))))
         .map_err(|_| ())
         .expect("A debugger is already installed.");
+
     install_vectors();
+
+    DEBUGGER.get().unwrap().try_lock().unwrap().initialize();
 }
 
 #[allow(clippy::inline_always)]
