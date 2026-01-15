@@ -22,7 +22,7 @@ pub static DEBUGGER: OnceLock<Mutex<&mut dyn Debugger>> = OnceLock::new();
 
 pub unsafe trait Debugger: Send + Any {
     /// Initializes the debugger.
-    fn initialize(&mut self) {}
+    fn initialize(&mut self);
 
     /// Registers a breakpoint at the specified address.
     ///
@@ -55,7 +55,10 @@ pub fn install(debugger: impl Debugger + 'static) {
         .set(Mutex::new(Box::leak(Box::new(debugger))))
         .map_err(|_| ())
         .expect("A debugger is already installed.");
+
     install_vectors();
+
+    DEBUGGER.get().unwrap().try_lock().unwrap().initialize();
 }
 
 #[allow(clippy::inline_always)]

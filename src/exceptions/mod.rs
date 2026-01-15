@@ -63,7 +63,7 @@ pub fn install_vectors() {
 ///
 /// Note that updating these fields will cause the exception handler to apply the changes to the CPU
 /// if/when the current exception handler returns.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[repr(C)]
 pub struct DebugEventContext {
     /// The saved program status register (spsr) from before the exception.

@@ -5,7 +5,19 @@ use vex_sdk::{vexSerialWriteChar, vexSerialWriteFree, vexTasksRun};
 use vexide_devices::display::Display;
 
 /// A means of communicating with a debug console.
-pub trait Transport: Connection<Error = io::Error> + ConnectionExt + Send + Clone {}
+pub trait Transport: Connection<Error = io::Error> + ConnectionExt + Send + Clone {
+    unsafe fn write_user_buffer(&mut self, channel: u32, data: *const u8, data_len: u32) -> i32 {
+        unsafe {
+            vex_sdk::vexSerialWriteBuffer(channel, data, data_len)
+        }
+    }
+
+    unsafe fn write_user_char(&mut self, channel: u32, c: u8) -> i32 {
+        unsafe {
+            vex_sdk::vexSerialWriteChar(channel, c)
+        }
+    }
+}
 
 /// Debug logging via stdio.
 #[derive(Debug)]
