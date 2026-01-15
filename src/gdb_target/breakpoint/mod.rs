@@ -1,6 +1,5 @@
 //! Software breakpoint management.
 
-
 use gdbstub::target::ext::breakpoints::{Breakpoints, HwBreakpointOps, SwBreakpointOps};
 use snafu::Snafu;
 

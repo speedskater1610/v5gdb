@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 #![cfg(target_arch = "arm")]
 
-use std::sync::{Mutex, OnceLock};
 use core::{any::Any, arch::asm};
+use std::sync::{Mutex, OnceLock};
 
 use crate::{
     exceptions::{DebugEventContext, install_vectors},

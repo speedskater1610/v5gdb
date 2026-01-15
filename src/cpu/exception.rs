@@ -32,7 +32,9 @@ impl VectorBaseAddressRegister {
     ///
     /// The register value must point to a valid and properly aligned vector table.
     pub unsafe fn write(self) {
-        unsafe { Self::write_raw(self.raw_value()); }
+        unsafe {
+            Self::write_raw(self.raw_value());
+        }
     }
 }
 

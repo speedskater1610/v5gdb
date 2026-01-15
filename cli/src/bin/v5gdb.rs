@@ -2,9 +2,15 @@ use std::{process::exit, time::Duration};
 
 use cobs::CobsDecoderOwned;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, stderr}, net::{TcpListener, TcpStream}, process::Command, time::sleep
+    io::{AsyncReadExt, AsyncWriteExt, stderr},
+    net::{TcpListener, TcpStream},
+    process::Command,
+    time::sleep,
 };
-use vex_v5_serial::{Connection, serial::{self, SerialDevice}};
+use vex_v5_serial::{
+    Connection,
+    serial::{self, SerialDevice},
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
