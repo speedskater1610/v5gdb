@@ -12,12 +12,15 @@ homepage = "https://internals.vexide.dev/technical/debugger"
 rust-version = "1.93"
 
 [workspace]
-members = ["multiplex","xtask"]
+members = ["cli","xtask"]
 
 [profile.release]
 opt-level = "z"
 lto = false
 debug = true
+
+[profile.dev.package.cobs]
+opt-level = "z"
 
 # These fields configure default behavior for uploads with `cargo v5`.
 [package.metadata.v5]
@@ -39,6 +42,7 @@ snafu = { version = "0.8.9", default-features = false, features = [
     "rust_1_81",
 ] }
 vexide-devices = { version = "0.8.0", default-features = false }
+cobs = { version = "0.5.0", default-features = false }
 
 [dev-dependencies]
 anyhow = "1.0.100"

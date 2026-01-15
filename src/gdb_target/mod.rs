@@ -258,7 +258,6 @@ impl MemoryMap for V5Target {
         let slice = &memory_map[offset as usize..];
         let count = slice.len().min(length);
         buf[..count].copy_from_slice(&slice[..count]);
-        println!("Done to copy");
         Ok(count)
     }
 }

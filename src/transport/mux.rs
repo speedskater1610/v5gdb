@@ -13,6 +13,7 @@
 
 use core::{arch::global_asm, ptr};
 
+use cobs::CobsEncoder;
 use cortex_ar::asm::{dsb, isb};
 
 use crate::cpu::cache::{self, CacheTarget};
@@ -71,6 +72,11 @@ pub fn enable_auto_muxing() {
     }
 }
 
+/// Directly access VEX SDK functions over the jump table without their wrappers.
+///
+/// This is effectively a partial re-implementation of the `vex-sdk-jumptable` crate, which we can't
+/// use here because those might be the functions we are redirecting. If we were to call those
+/// directly, it might cause an infinite loop.
 macro_rules! jumptable {
     ($offset:literal, $ty:ty) => {{
         const JUMPTABLE_BASE: u32 = 0x037fc000;
@@ -79,33 +85,83 @@ macro_rules! jumptable {
     }};
 }
 
-fn write_raw(buf: &[u8]) -> i32 {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ChannelId {
+    /// Standard I/O.
+    User = b'u',
+    /// Debug channel. Messages should use the GDB Protocol.
+    Debug = b'd',
+}
+
+pub const USER: u32 = 1;
+pub const OUT_BUFFER_SIZE: usize = 2048;
+
+/// Write one or more COBS-encoded packets to serial output, each prefixed with the given channel
+/// id.
+///
+/// Returns the number of bytes that were written from `buf`.
+pub fn write_all(channel: ChannelId, mut buf: &[u8]) {
+    while !buf.is_empty() {
+        let mut out_buf = [0u8; OUT_BUFFER_SIZE];
+
+        // The actual out-buffer has 1 extra byte for the packet delimiter.
+        let max_len = out_buf.len() - 1;
+        let out_buf_without_delimiter = &mut out_buf[..max_len];
+
+        let mut encoder = CobsEncoder::new(out_buf_without_delimiter);
+
+        encoder.push(&[channel as u8]).unwrap();
+
+        // Put as many bytes as possible into this packet.
+        while let Some(&byte) = buf.first() {
+            let Ok(_) = encoder.push(&[byte]) else {
+                break;
+            };
+            buf = &buf[1..];
+        }
+
+        let length = encoder.finalize();
+
+        write_raw(&out_buf[..=length]); // Include `0` packet delimiter.
+    }
+}
+
+/// Writes up to [`OUT_BUFFER_SIZE`] bytes to serial.
+fn write_raw(buf: &[u8]) {
     let vexSerialWriteBuffer =
         unsafe { jumptable!(0x89c, unsafe extern "C" fn(u32, *const u8, u32) -> i32) };
 
-    unsafe { vexSerialWriteBuffer(1, buf.as_ptr(), buf.len() as u32) }
+    if unsafe { vex_sdk::vexSerialWriteFree(USER) as usize } < buf.len() {
+        flush_serial();
+    }
+
+    unsafe {
+        vexSerialWriteBuffer(USER, buf.as_ptr(), buf.len() as u32);
+    }
+}
+
+pub fn flush_serial() {
+    unsafe {
+        while (vex_sdk::vexSerialWriteFree(USER) as usize) != OUT_BUFFER_SIZE {
+            vex_sdk::vexTasksRun();
+        }
+    }
 }
 
 unsafe extern "C" fn user_write_buffer(channel: u32, data: *const u8, data_len: u32) -> i32 {
-    if channel == 1 {
-        write_raw("User[".as_bytes());
-
-        let res = unsafe { write_raw(core::slice::from_raw_parts(data, data_len as usize)) };
-        write_raw("]".as_bytes());
-        res
-    } else {
-        -1
+    if channel != 1 {
+        return -1;
     }
+    let user_data = unsafe { core::slice::from_raw_parts(data, data_len as usize) };
+    write_all(ChannelId::User, user_data);
+    data_len as i32
 }
 
 unsafe extern "C" fn user_write_char(channel: u32, c: u8) -> i32 {
-    let vexSerialWriteChar = unsafe { jumptable!(0x898, unsafe extern "C" fn(u32, u8) -> i32) };
-
-    if channel == 1 {
-        let str = "hi";
-        write_raw(str.as_bytes());
-        unsafe { vexSerialWriteChar(1, c) }
-    } else {
-        -1
+    if channel != 1 {
+        return -1;
     }
+    write_all(ChannelId::User, &[c]);
+    1
 }
