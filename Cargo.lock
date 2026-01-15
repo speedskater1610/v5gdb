@@ -821,6 +821,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "v5gdb-multiplex"
+version = "0.1.0"
+
+[[package]]
 name = "vex-libunwind"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

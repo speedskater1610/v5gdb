@@ -1,29 +1,29 @@
 //! Alternative implementations of SDK functions under the debugger.
 
+use core::{arch::global_asm, ptr};
+
+use cortex_ar::asm::{dsb, isb};
 use vex_sdk::*;
 
-use crate::{debugger::V5Debugger, transport::Transport};
+use crate::{
+    cpu::cache::{self, CacheTarget},
+    debugger::V5Debugger,
+    transport::Transport,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InternalBreakpoint {
     SystemExitRequest,
-    SerialWriteBuffer,
 }
 
 impl<S: Transport> V5Debugger<S> {
     pub(crate) fn register_internal_breakpoints(&mut self) {
         assert!(self.internal_breaks.is_none());
 
-        let internal_breaks = [
-            (
-                InternalBreakpoint::SystemExitRequest,
-                vexSystemExitRequest as *const () as u32,
-            ),
-            (
-                InternalBreakpoint::SerialWriteBuffer,
-                vexSerialWriteBuffer as *const () as u32,
-            ),
-        ];
+        let internal_breaks = [(
+            InternalBreakpoint::SystemExitRequest,
+            vexSystemExitRequest as *const () as u32,
+        )];
 
         for (_id, addr) in internal_breaks {
             unsafe {
@@ -63,21 +63,21 @@ impl<S: Transport> V5Debugger<S> {
                 self.target.remove_sw_breakpoint(addr, true);
                 true
             }
-            InternalBreakpoint::SerialWriteBuffer => {
-                let ctx = &mut self.target.exception_ctx;
-                let channel = ctx.registers[0];
-                let data = ctx.registers[1] as *const u8;
-                let data_len = ctx.registers[2];
+            // InternalBreakpoint::SerialWriteBuffer => {
+            //     let ctx = &mut self.target.exception_ctx;
+            //     let channel = ctx.registers[0];
+            //     let data = ctx.registers[1] as *const u8;
+            //     let data_len = ctx.registers[2];
 
-                let ret = unsafe {
-                    self.stream.write_user_buffer(channel, data, data_len)
-                };
+            //     let ret = unsafe {
+            //         self.stream.write_user_buffer(channel, data, data_len)
+            //     };
 
-                ctx.registers[0] = ret as u32;
-                ctx.program_counter = ctx.link_register;
+            //     ctx.registers[0] = ret as u32;
+            //     ctx.program_counter = ctx.link_register;
 
-                false
-            }
+            //     false
+            // }
         }
     }
 }

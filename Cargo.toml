@@ -12,7 +12,7 @@ homepage = "https://internals.vexide.dev/technical/debugger"
 rust-version = "1.93"
 
 [workspace]
-members = ["xtask"]
+members = ["multiplex","xtask"]
 
 [profile.release]
 opt-level = "z"
