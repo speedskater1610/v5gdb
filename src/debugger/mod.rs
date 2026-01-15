@@ -1,16 +1,13 @@
 //! Main debugger loop and event handling logic.
 
-use core::{convert::Infallible, ops::ControlFlow};
+use core::convert::Infallible;
 
 use gdbstub::{
-    common::Signal,
     stub::{
         GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
     },
-    target::ext::breakpoints::HwBreakpoint,
 };
 use snafu::Snafu;
-use vex_sdk::vexSystemExitRequest;
 use zynq7000::devcfg::DevCfg;
 
 use crate::{
@@ -20,8 +17,7 @@ use crate::{
     exceptions::DebugEventContext,
     gdb_target::{
         V5Target,
-        arch::ArmBreakpointKind,
-        breakpoint::{hardware::Specificity, software::SwBreakpoint},
+        breakpoint::hardware::Specificity,
     },
     transport::Transport,
 };
