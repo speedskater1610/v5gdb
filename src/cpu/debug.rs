@@ -2,7 +2,7 @@
 
 #![allow(non_upper_case_globals)]
 
-use std::arch::asm;
+use core::arch::asm;
 
 use arbitrary_int::*;
 use bitbybit::{bitenum, bitfield};

@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 use gdbstub::arch::{Arch, RegId, Registers};
 
@@ -155,7 +155,7 @@ impl ArmRegisterID {
 }
 
 impl RegId for ArmRegisterID {
-    fn from_raw_id(id: usize) -> Option<(Self, Option<std::num::NonZeroUsize>)> {
+    fn from_raw_id(id: usize) -> Option<(Self, Option<core::num::NonZeroUsize>)> {
         let reg = match id {
             0..=12 => Self::Gpr(id as u8),
             13 => Self::Sp,

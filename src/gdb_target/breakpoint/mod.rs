@@ -1,10 +1,8 @@
 //! Software breakpoint management.
 
-use std::ops::ControlFlow;
 
 use gdbstub::target::ext::breakpoints::{Breakpoints, HwBreakpointOps, SwBreakpointOps};
 use snafu::Snafu;
-use vex_sdk::*;
 
 use super::V5Target;
 use crate::cpu::cache;

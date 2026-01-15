@@ -12,7 +12,7 @@
 //! Therefore, for an instruction update to take effect in a uniprocessor setting, the following
 //! operations must be made:
 //!
-//! 1. The instruction must be written to the data cache. (e.g. via [`std::ptr::write_volatile`])
+//! 1. The instruction must be written to the data cache. (e.g. via [`core::ptr::write_volatile`])
 //! 2. The changes in the data cache must synced far enough that the i-cache sees it when it queries
 //!    main memory. (via [`cache::clean_dcache_to_unification`])
 //! 3. The instruction cache must read any changes from main memory. (via
@@ -20,7 +20,7 @@
 //! 4. Any branch predictions for the instruction must be cleared, since they're now invalid. (this
 //!    is handled by the previous function).
 
-use std::arch::asm;
+use core::arch::asm;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheTarget {

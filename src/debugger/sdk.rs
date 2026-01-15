@@ -2,7 +2,7 @@
 
 use vex_sdk::*;
 
-use crate::{debugger::V5Debugger, exceptions::DebugEventContext, transport::Transport};
+use crate::{debugger::V5Debugger, transport::Transport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InternalBreakpoint {

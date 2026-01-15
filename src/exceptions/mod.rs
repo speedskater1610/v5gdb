@@ -1,4 +1,4 @@
-use std::{
+use core::{
     arch::asm,
     array,
     ffi::c_void,

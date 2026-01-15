@@ -1,6 +1,6 @@
 #![allow(clippy::missing_safety_doc)]
 
-use std::{convert::Infallible, ptr::NonNull};
+use core::convert::Infallible;
 
 use gdbstub::{
     arch::Arch,

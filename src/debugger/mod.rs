@@ -1,6 +1,6 @@
 //! Main debugger loop and event handling logic.
 
-use std::{convert::Infallible, ops::ControlFlow};
+use core::{convert::Infallible, ops::ControlFlow};
 
 use gdbstub::{
     common::Signal,
@@ -116,7 +116,9 @@ impl<S: Transport> V5Debugger<S> {
 
         self.target.reset_resume();
         while !self.target.resume {
-            std::thread::yield_now();
+            unsafe {
+                vex_sdk::vexTasksRun();
+            }
 
             gdb = Self::drive_state_machine(gdb, &mut self.target)
                 .expect("debugger encountered an error");
