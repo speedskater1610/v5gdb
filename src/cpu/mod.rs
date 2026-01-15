@@ -1,5 +1,49 @@
+use arbitrary_int::*;
+use bitbybit::bitfield;
+
 pub mod cache;
 pub mod debug;
 pub mod exception;
 pub mod instruction;
 pub mod vmsa;
+
+/// The status of an ARMv7-A CPU.
+#[bitfield(u32, debug, default = 0)]
+pub struct ProgramStatus {
+    #[bit(31, rw)]
+    negative: bool,
+    #[bit(30, rw)]
+    zero: bool,
+    #[bit(29, rw)]
+    carry: bool,
+    #[bit(28, rw)]
+    overflow: bool,
+    #[bit(27, rw)]
+    cumulative_sat: bool,
+    #[bits(25..=26, rw)]
+    if_then_1_0: u2,
+    #[bit(24, rw)]
+    jazelle: bool,
+    #[bits(16..=19, rw)]
+    gt_eq_flags: u4,
+    #[bits(10..=15, rw)]
+    if_then_7_2: u6,
+    #[bit(9, rw)]
+    big_endian: bool,
+    #[bit(8, rw)]
+    async_abort_disabled: bool,
+    #[bit(7, rw)]
+    irq_disabled: bool,
+    #[bit(6, rw)]
+    fiq_disabled: bool,
+    #[bit(5, rw)]
+    thumb: bool,
+    #[bits(0..=4, rw)]
+    mode: u5,
+}
+
+impl ProgramStatus {
+    pub const fn raw_value_mut(&mut self) -> &mut u32 {
+        &mut self.raw_value
+    }
+}

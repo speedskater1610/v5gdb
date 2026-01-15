@@ -20,7 +20,7 @@ use gdbstub::{
 use zynq7000::devcfg::MmioDevCfg;
 
 use crate::{
-    cpu::{cache, exception::ProgramStatus},
+    cpu::{ProgramStatus, cache},
     exceptions::DebugEventContext,
     gdb_target::{
         arch::{ArmBreakpointKind, ArmRegisters, ArmV7},
@@ -96,7 +96,7 @@ impl V5Target {
             .as_ref()
             .expect("The debugger target has no exception context set");
 
-        let kind = if exception_ctx.spsr.is_thumb() {
+        let kind = if exception_ctx.spsr.thumb() {
             ArmBreakpointKind::Thumb16
         } else {
             ArmBreakpointKind::Arm32
@@ -145,7 +145,7 @@ impl SingleThreadBase for V5Target {
                 pc: ctx.program_counter,
                 d: ctx.vfp_registers,
                 fpscr: ctx.fpscr,
-                cpsr: ctx.spsr.to_raw(),
+                cpsr: ctx.spsr.raw_value(),
             };
         } else {
             return Err(TargetError::NonFatal);
@@ -161,7 +161,7 @@ impl SingleThreadBase for V5Target {
                 stack_pointer: regs.sp,
                 link_register: regs.lr,
                 program_counter: regs.pc,
-                spsr: ProgramStatus(regs.cpsr),
+                spsr: ProgramStatus::new_with_raw_value(regs.cpsr),
                 vfp_registers: regs.d,
                 fpscr: regs.fpscr,
             };
