@@ -5,24 +5,24 @@ use vex_sdk::{vexSerialWriteChar, vexSerialWriteFree, vexTasksRun};
 
 /// A means of communicating with a debug console.
 pub trait Transport: Connection<Error = std::io::Error> + ConnectionExt + Send + Clone {
+    /// Handle a user program's call to vexSerialWriteBuffer
+    ///
+    /// # Safety
+    ///
+    /// The provided data buffer must be valid for reads up to the provided length.
     unsafe fn write_user_buffer(&mut self, channel: u32, data: *const u8, data_len: u32) -> i32 {
-        unsafe {
-            vex_sdk::vexSerialWriteBuffer(channel, data, data_len)
-        }
+        unsafe { vex_sdk::vexSerialWriteBuffer(channel, data, data_len) }
     }
 
-    unsafe fn write_user_char(&mut self, channel: u32, c: u8) -> i32 {
-        unsafe {
-            vex_sdk::vexSerialWriteChar(channel, c)
-        }
+    fn write_user_char(&mut self, channel: u32, c: u8) -> i32 {
+        unsafe { vex_sdk::vexSerialWriteChar(channel, c) }
     }
 }
 
 /// Debug logging via stdio.
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct StdioTransport {
-}
+pub struct StdioTransport {}
 
 impl StdioTransport {
     /// Create a new stdio-based transport.
@@ -44,7 +44,19 @@ impl Clone for StdioTransport {
     }
 }
 
-impl Transport for StdioTransport {}
+impl Transport for StdioTransport {
+    unsafe fn write_user_buffer(&mut self, channel: u32, data: *const u8, data_len: u32) -> i32 {
+        if channel == 1 {
+            let prefix = "u:";
+            unsafe {
+                vex_sdk::vexSerialWriteBuffer(1, prefix.as_ptr(), prefix.len() as u32);
+                vex_sdk::vexSerialWriteBuffer(1, data, data_len)
+            }
+        } else {
+            -1
+        }
+    }
+}
 
 impl Connection for StdioTransport {
     type Error = std::io::Error;

@@ -6,7 +6,8 @@ use crate::{debugger::V5Debugger, transport::Transport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InternalBreakpoint {
-    ExitRequest,
+    SystemExitRequest,
+    SerialWriteBuffer,
 }
 
 impl<S: Transport> V5Debugger<S> {
@@ -15,8 +16,12 @@ impl<S: Transport> V5Debugger<S> {
 
         let internal_breaks = [
             (
-                InternalBreakpoint::ExitRequest,
+                InternalBreakpoint::SystemExitRequest,
                 vexSystemExitRequest as *const () as u32,
+            ),
+            (
+                InternalBreakpoint::SerialWriteBuffer,
+                vexSerialWriteBuffer as *const () as u32,
             ),
         ];
 
@@ -35,6 +40,8 @@ impl<S: Transport> V5Debugger<S> {
     ///
     /// Returns whether the debug console should be shown even if the user hasn't requested it.
     pub(crate) fn handle_internal_breakpoint(&mut self) -> bool {
+        debug_assert!(self.target.breaks_paused);
+
         let pc = self.target.exception_ctx.program_counter;
 
         let Some(&(id, addr)) = self
@@ -47,13 +54,29 @@ impl<S: Transport> V5Debugger<S> {
         };
 
         match id {
-            InternalBreakpoint::ExitRequest => {
+            InternalBreakpoint::SystemExitRequest => {
                 self.target.exit_request();
+
 
                 // Continue to the debug monitor - once GDB realizes we are exiting, it will
                 // disconnect and allow us to return back to calling vexSystemExitRequest.
                 self.target.remove_sw_breakpoint(addr, true);
                 true
+            }
+            InternalBreakpoint::SerialWriteBuffer => {
+                let ctx = &mut self.target.exception_ctx;
+                let channel = ctx.registers[0];
+                let data = ctx.registers[1] as *const u8;
+                let data_len = ctx.registers[2];
+
+                let ret = unsafe {
+                    self.stream.write_user_buffer(channel, data, data_len)
+                };
+
+                ctx.registers[0] = ret as u32;
+                ctx.program_counter = ctx.link_register;
+
+                false
             }
         }
     }

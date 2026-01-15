@@ -37,7 +37,7 @@ pub enum DebuggerError {
 /// Debugger state machine for handling remote connections.
 pub struct V5Debugger<S: Transport> {
     target: V5Target,
-    internal_breaks: Option<[(InternalBreakpoint, u32); 1]>,
+    internal_breaks: Option<[(InternalBreakpoint, u32); 2]>,
     stream: S,
     gdb_buffer: Option<&'static mut [u8]>,
     gdb: Option<GdbStubStateMachine<'static, V5Target, S>>,
