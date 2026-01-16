@@ -35,6 +35,7 @@ mod arm {
         arch::asm,
         array,
         ffi::c_void,
+        mem::MaybeUninit,
         sync::atomic::{AtomicBool, Ordering},
     };
 
@@ -47,6 +48,11 @@ mod arm {
     };
 
     core::arch::global_asm!(include_str!("./overlay.S"), options(raw));
+
+    const ABORT_STACK_SIZE: usize = 0x100000;
+
+    #[unsafe(no_mangle)]
+    static mut ABORT_STACK: MaybeUninit<[u8; const { ABORT_STACK_SIZE }]> = MaybeUninit::uninit();
 
     /// Handles a debug event.
     ///
@@ -87,6 +93,30 @@ mod arm {
                 // No exceptions should be allowed to occur while updating the vector table, since
                 // the vector table is responsible for handling those exceptions.
                 asm!("cpsid if", options(nostack, nomem, preserves_flags));
+
+                // The default stack that VEXos gives us in abort mode is only 1kb, which is
+                // extremely inadequate for what we're doing in the abort handler, so we need to
+                // load our own stack.
+                //
+                // In an effort to avoid requiring linkerscript modification, we're storing this
+                // stack as an uninitialized static global rather than giving it it's own explicit
+                // linker section.
+                asm!(
+                    "mrs r0, cpsr",
+
+                    // abort mode
+                    "bic r0, r0, #0b11111",
+                    "orr r0, r0, #0b10111",
+                    "msr cpsr_c, r0",
+                    "ldr sp, =ABORT_STACK+{stack_size}",
+
+                    // back to sys mode
+                    "orr r0, r0, #0b11111",
+                    "msr cpsr_c, r0",
+                    stack_size = const ABORT_STACK_SIZE,
+                    out("r0") _,
+                    options(nostack, preserves_flags)
+                );
 
                 original_vector_addresses =
                     array::from_fn(|i| old_vbar.ptr().byte_add(i * size_of::<u32>()) as u32);
