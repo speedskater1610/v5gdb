@@ -246,7 +246,6 @@ impl HwBreakpointManager {
         assert!(!self.locked(), "Debug registers must be unlocked");
 
         let Ok((search_word, byte_address_select)) = split_addr(addr, kind) else {
-            println!("\n\nNot aligned");
             return false;
         };
 
@@ -426,7 +425,6 @@ impl HwBreakpoint for V5Target {
         addr: u32,
         kind: ArmBreakpointKind,
     ) -> TargetResult<bool, Self> {
-        println!("\nRemoving {addr}/{kind:?}");
         let did_remove = self
             .hw_manager
             .remove_breakpoint_at(addr, Specificity::Match, kind);

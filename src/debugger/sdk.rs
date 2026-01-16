@@ -6,19 +6,17 @@ use crate::{debugger::V5Debugger, transport::Transport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InternalBreakpoint {
-    ExitRequest,
+    SystemExitRequest,
 }
 
 impl<S: Transport> V5Debugger<S> {
     pub(crate) fn register_internal_breakpoints(&mut self) {
         assert!(self.internal_breaks.is_none());
 
-        let internal_breaks = [
-            (
-                InternalBreakpoint::ExitRequest,
-                vexSystemExitRequest as *const () as u32,
-            ),
-        ];
+        let internal_breaks = [(
+            InternalBreakpoint::SystemExitRequest,
+            vexSystemExitRequest as *const () as u32,
+        )];
 
         for (_id, addr) in internal_breaks {
             unsafe {
@@ -35,6 +33,8 @@ impl<S: Transport> V5Debugger<S> {
     ///
     /// Returns whether the debug console should be shown even if the user hasn't requested it.
     pub(crate) fn handle_internal_breakpoint(&mut self) -> bool {
+        debug_assert!(self.target.breaks_paused);
+
         let pc = self.target.exception_ctx.program_counter;
 
         let Some(&(id, addr)) = self
@@ -47,12 +47,18 @@ impl<S: Transport> V5Debugger<S> {
         };
 
         match id {
-            InternalBreakpoint::ExitRequest => {
+            InternalBreakpoint::SystemExitRequest => {
+                self.target.remove_sw_breakpoint(addr, true);
+
+                if !self.has_client() {
+                    // If there's no client connected, exit as normal without trying to tell GDB.
+                    return false;
+                }
+
                 self.target.exit_request();
 
                 // Continue to the debug monitor - once GDB realizes we are exiting, it will
                 // disconnect and allow us to return back to calling vexSystemExitRequest.
-                self.target.remove_sw_breakpoint(addr, true);
                 true
             }
         }

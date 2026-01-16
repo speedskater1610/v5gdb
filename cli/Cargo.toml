@@ -1,0 +1,11 @@
+[package]
+name = "v5gdb-cli"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1.0.100"
+cobs = "0.5.0"
+tokio = { version = "1.49.0", features = ["full"] }
+vex-v5-serial = { version = "0.5.2", default-features = false, features = ["serial"] }

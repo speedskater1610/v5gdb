@@ -1,2 +1,2 @@
-file ./target/armv7a-vex-v5/release/examples/basic
+file ./target/armv7a-vex-v5/debug/examples/basic
 set debug remote 1

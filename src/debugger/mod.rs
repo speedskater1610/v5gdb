@@ -2,10 +2,8 @@
 
 use core::convert::Infallible;
 
-use gdbstub::{
-    stub::{
-        GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
-    },
+use gdbstub::stub::{
+    GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
 };
 use snafu::Snafu;
 use zynq7000::devcfg::DevCfg;
@@ -15,10 +13,7 @@ use crate::{
     cpu::debug::DebugEventReason,
     debugger::sdk::InternalBreakpoint,
     exceptions::DebugEventContext,
-    gdb_target::{
-        V5Target,
-        breakpoint::hardware::Specificity,
-    },
+    gdb_target::{V5Target, breakpoint::hardware::Specificity},
     transport::Transport,
 };
 
@@ -123,10 +118,16 @@ impl<S: Transport> V5Debugger<S> {
         self.target.resume = false;
         self.gdb = Some(gdb);
     }
+
+    fn has_client(&self) -> bool {
+        let disconnected = matches!(&self.gdb, None | Some(GdbStubStateMachine::Disconnected(_)));
+        !disconnected
+    }
 }
 
 unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
     fn initialize(&mut self) {
+        self.stream.initialize();
         self.register_internal_breakpoints();
     }
 
