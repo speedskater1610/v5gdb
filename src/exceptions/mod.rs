@@ -95,8 +95,8 @@ mod arm {
                 asm!("cpsid if", options(nostack, nomem, preserves_flags));
 
                 // The default stack that VEXos gives us in abort mode is only 1kb, which is
-                // extremely inadequate for what we're doing in the abort handler, so we need to
-                // load our own stack.
+                // extremely inadequate for what we're doing in the debug event handler, so we need
+                // to load our own stack region.
                 //
                 // In an effort to avoid requiring linkerscript modification, we're storing this
                 // stack as an uninitialized static global rather than giving it it's own explicit
