@@ -131,14 +131,6 @@ unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
         self.register_internal_breakpoints();
     }
 
-    unsafe fn register_breakpoint(
-        &mut self,
-        addr: u32,
-        thumb: bool,
-    ) -> Result<(), crate::gdb_target::breakpoint::BreakpointError> {
-        unsafe { self.target.register_sw_breakpoint(addr, thumb, false) }
-    }
-
     unsafe fn handle_debug_event(&mut self, ctx: &mut DebugEventContext) {
         self.target.set_breakpoints_ignored(true);
 

@@ -1,19 +1,43 @@
 #![allow(missing_docs)]
-#![cfg(target_arch = "arm")]
+#![cfg_attr(not(target_arch = "arm"), allow(unused))]
 
 use core::{any::Any, arch::asm};
 use std::sync::{Mutex, OnceLock};
 
-use crate::{
-    exceptions::{DebugEventContext, install_vectors},
-    gdb_target::breakpoint::BreakpointError,
-};
+use crate::exceptions::DebugEventContext;
 
 pub mod cpu;
+#[cfg(target_arch = "arm")]
 pub mod debugger;
 pub mod exceptions;
+#[cfg(target_arch = "arm")]
 pub mod gdb_target;
 pub mod transport;
+
+#[cfg(not(target_arch = "arm"))]
+pub mod debugger {
+    use crate::{Debugger, transport::Transport};
+
+    pub struct V5Debugger<S: Transport> {
+        _stream: S,
+    }
+
+    impl<S: Transport> V5Debugger<S> {
+        /// Creates a new debugger.
+        #[must_use]
+        pub fn new(stream: S) -> Self {
+            Self { _stream: stream }
+        }
+    }
+
+    unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
+        fn initialize(&mut self) {}
+
+        unsafe fn handle_debug_event(&mut self, _ctx: &mut crate::exceptions::DebugEventContext) {
+            unimplemented!()
+        }
+    }
+}
 
 pub static DEBUGGER: OnceLock<Mutex<&mut dyn Debugger>> = OnceLock::new();
 
@@ -25,20 +49,6 @@ pub static DEBUGGER: OnceLock<Mutex<&mut dyn Debugger>> = OnceLock::new();
 pub unsafe trait Debugger: Send + Any {
     /// Initializes the debugger.
     fn initialize(&mut self);
-
-    /// Registers a breakpoint at the specified address.
-    ///
-    /// # Safety
-    ///
-    /// Breakpoints may only be placed on read/write/executable addresses which contain an
-    /// instruction and are not used as data.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if there are no more free breakpoint slots or if
-    /// the specified address already has a breakpoint on it.
-    unsafe fn register_breakpoint(&mut self, addr: u32, thumb: bool)
-    -> Result<(), BreakpointError>;
 
     /// A callback function which is run whenever a breakpoint is triggered.
     ///
@@ -58,7 +68,8 @@ pub fn install(debugger: impl Debugger + 'static) {
         .map_err(|_| ())
         .expect("A debugger is already installed.");
 
-    install_vectors();
+    #[cfg(target_arch = "arm")]
+    exceptions::install_vectors();
 
     DEBUGGER.get().unwrap().try_lock().unwrap().initialize();
 }
@@ -66,6 +77,7 @@ pub fn install(debugger: impl Debugger + 'static) {
 #[allow(clippy::inline_always)]
 #[inline(always)]
 pub fn breakpoint() {
+    #[cfg(target_arch = "arm")]
     unsafe {
         asm!("bkpt", options(nostack, nomem, preserves_flags));
     }

@@ -1,10 +1,9 @@
 use core::fmt::Debug;
 
 use gdbstub::conn::{Connection, ConnectionExt};
-use vex_sdk::{vexSerialWriteChar, vexSerialWriteFree, vexTasksRun};
+use vex_sdk::vexTasksRun;
 
-use crate::transport::mux::{ChannelId, OUT_BUFFER_SIZE};
-
+#[cfg(target_arch = "arm")]
 pub mod mux;
 
 /// A means of communicating with a debug console.
@@ -39,6 +38,7 @@ impl Clone for StdioTransport {
 
 impl Transport for StdioTransport {
     fn initialize(&mut self) {
+        #[cfg(target_arch = "arm")]
         mux::enable_auto_muxing();
     }
 }
@@ -47,16 +47,19 @@ impl Connection for StdioTransport {
     type Error = std::io::Error;
 
     fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
-        mux::write_all(ChannelId::Debug, &[byte]);
+        #[cfg(target_arch = "arm")]
+        mux::write_all(mux::ChannelId::Debug, &[byte]);
         Ok(())
     }
 
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        mux::write_all(ChannelId::Debug, buf);
+        #[cfg(target_arch = "arm")]
+        mux::write_all(mux::ChannelId::Debug, buf);
         Ok(())
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
+        #[cfg(target_arch = "arm")]
         mux::flush_serial();
         Ok(())
     }

@@ -1,10 +1,15 @@
 use arbitrary_int::*;
 use bitbybit::bitfield;
 
+#[cfg(target_arch = "arm")]
 pub mod cache;
+#[cfg(target_arch = "arm")]
 pub mod debug;
+#[cfg(target_arch = "arm")]
 pub mod exception;
+#[cfg(target_arch = "arm")]
 pub mod instruction;
+#[cfg(target_arch = "arm")]
 pub mod vmsa;
 
 /// The status of an ARMv7-A CPU.
