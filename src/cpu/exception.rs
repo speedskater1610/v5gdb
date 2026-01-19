@@ -1,6 +1,6 @@
+use aarch32_cpu::register::{SysReg, SysRegRead, SysRegWrite};
 use arbitrary_int::u27;
 use bitbybit::bitfield;
-use cortex_ar::register::{SysReg, SysRegRead, SysRegWrite};
 
 #[bitfield(u32, debug)]
 pub struct VectorBaseAddressRegister {
