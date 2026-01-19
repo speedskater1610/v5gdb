@@ -11,6 +11,7 @@ use vex_v5_serial::{
     Connection,
     serial::{self, SerialDevice},
 };
+use which::which;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,24 +33,24 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move { serve_device_serial(device, server).await.unwrap() });
 
     let known_gdb_names = ["arm-none-eabi-gdb", "gdb-multiarch", "gdb"];
-
-    let mut gdb = None;
+    let mut resolved_gdb = None;
     for name in known_gdb_names {
-        let mut cmd = Command::new(name);
-        cmd.arg(format!("--eval-command=file {elf_file}"));
-        cmd.arg("--eval-command=target remote :35537");
-
-        if let Ok(child) = cmd.spawn() {
-            gdb = Some(child);
+        if let Ok(path) = which(name) {
+            resolved_gdb = Some(path);
         }
     }
 
-    let Some(mut gdb) = gdb else {
+    let Some(resolved_gdb) = resolved_gdb else {
         eprintln!("Error: One of the following GDB executables must be installed.");
         eprintln!("{:?}", known_gdb_names);
         exit(1);
     };
 
+    let mut cmd = Command::new(resolved_gdb);
+    cmd.arg(format!("--eval-command=file {elf_file}"));
+    cmd.arg("--eval-command=target remote :35537");
+
+    let mut gdb = cmd.spawn()?;
     gdb.wait().await?;
 
     Ok(())
