@@ -11,7 +11,6 @@
 
 #![allow(non_snake_case)]
 
-
 use cobs::CobsEncoder;
 
 use crate::sdk::jumptable;
