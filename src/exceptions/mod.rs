@@ -49,10 +49,11 @@ mod arm {
 
     core::arch::global_asm!(include_str!("./overlay.S"), options(raw));
 
-    const ABORT_STACK_SIZE: usize = 0x100000;
+    const ABORT_STACK_SIZE: usize = 0x8000; // 32KB
 
-    #[unsafe(no_mangle)]
-    static mut ABORT_STACK: MaybeUninit<[u8; const { ABORT_STACK_SIZE }]> = MaybeUninit::uninit();
+    #[repr(C, align(8))]
+    struct AbortStack(MaybeUninit<[u8; const { ABORT_STACK_SIZE }]>);
+    static mut ABORT_STACK: AbortStack = AbortStack(MaybeUninit::uninit());
 
     /// Handles a debug event.
     ///
@@ -102,19 +103,13 @@ mod arm {
                 // stack as an uninitialized static global rather than giving it it's own explicit
                 // linker section.
                 asm!(
-                    "mrs r0, cpsr",
-
                     // abort mode
-                    "bic r0, r0, #0b11111",
-                    "orr r0, r0, #0b10111",
-                    "msr cpsr_c, r0",
-                    "ldr sp, =ABORT_STACK+{stack_size}",
-
+                    "cps #0b10111",
+                    "ldr sp, ={abort_stack}+{stack_size}",
                     // back to sys mode
-                    "orr r0, r0, #0b11111",
-                    "msr cpsr_c, r0",
+                    "cps #0b11111",
+                    abort_stack = sym ABORT_STACK,
                     stack_size = const ABORT_STACK_SIZE,
-                    out("r0") _,
                     options(nostack, preserves_flags)
                 );
 
