@@ -31,11 +31,27 @@ async fn main() -> anyhow::Result<()> {
     let server = TcpListener::bind("127.0.0.1:35537").await?;
     tokio::spawn(async move { serve_device_serial(device, server).await.unwrap() });
 
-    let mut gdb = Command::new("gdb");
-    gdb.arg(format!("--eval-command=file {elf_file}"));
-    gdb.arg("--eval-command=target remote :35537");
-    let mut process = gdb.spawn()?;
-    process.wait().await?;
+    let known_gdb_names = ["arm-none-eabi-gdb", "gdb-multiarch", "gdb"];
+
+    let mut gdb = None;
+    for name in known_gdb_names {
+        let mut cmd = Command::new(name);
+        cmd.arg(format!("--eval-command=file {elf_file}"));
+        cmd.arg("--eval-command=target remote :35537");
+
+        if let Ok(child) = cmd.spawn() {
+            gdb = Some(child);
+        }
+    }
+
+    let Some(mut gdb) = gdb else {
+        eprintln!("Error: One of the following GDB executables must be installed.");
+        eprintln!("{:?}", known_gdb_names);
+        exit(1);
+    };
+
+
+    gdb.wait().await?;
 
     Ok(())
 }
