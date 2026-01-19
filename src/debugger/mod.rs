@@ -129,6 +129,7 @@ unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
     fn initialize(&mut self) {
         self.stream.initialize();
         self.register_internal_breakpoints();
+        crate::sdk::competition::install_override();
     }
 
     unsafe fn handle_debug_event(&mut self, ctx: &mut DebugEventContext) {
