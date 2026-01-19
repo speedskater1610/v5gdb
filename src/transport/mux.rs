@@ -11,12 +11,10 @@
 
 #![allow(non_snake_case)]
 
-use core::{arch::global_asm, ptr};
 
-use aarch32_cpu::asm::{dsb, isb};
 use cobs::CobsEncoder;
 
-use crate::{cpu::cache::{self, CacheTarget}, sdk::jumptable};
+use crate::sdk::jumptable;
 
 /// Capture calls to `vexSerial*` functions and automatically add multiplexing packet framing,
 /// sending them over the User channel.

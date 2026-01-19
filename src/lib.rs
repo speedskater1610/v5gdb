@@ -12,9 +12,9 @@ pub mod debugger;
 pub mod exceptions;
 #[cfg(target_arch = "arm")]
 pub mod gdb_target;
-pub mod transport;
 #[cfg(target_arch = "arm")]
 mod sdk;
+pub mod transport;
 
 #[cfg(not(target_arch = "arm"))]
 pub mod debugger {

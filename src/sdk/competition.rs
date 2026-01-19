@@ -6,7 +6,10 @@
 //! if the real competition mode is "disabled" but it's overridden to "opcontrol", then user code
 //! will see "opcontrol" as the current mode but be unable to write to motor devices.
 
-use std::{fmt::{Debug, Formatter, self}, sync::atomic::{AtomicU32, Ordering}};
+use std::{
+    fmt::{self, Debug, Formatter},
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use bitbybit::bitfield;
 
