@@ -1360,12 +1360,12 @@ dependencies = [
 [[package]]
 name = "vexide"
 version = "0.8.0"
-source = "git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack#327a7d623228d511ee704535b97d39046e92e898"
+source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "vex-sdk",
  "vexide-async",
- "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack)",
- "vexide-devices 0.8.0 (git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack)",
+ "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
+ "vexide-devices 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
  "vexide-macro",
  "vexide-startup",
 ]
@@ -1373,7 +1373,7 @@ dependencies = [
 [[package]]
 name = "vexide-async"
 version = "0.2.0"
-source = "git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack#327a7d623228d511ee704535b97d39046e92e898"
+source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "async-lock",
  "async-task",
@@ -1397,7 +1397,7 @@ dependencies = [
 [[package]]
 name = "vexide-core"
 version = "0.8.0"
-source = "git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack#327a7d623228d511ee704535b97d39046e92e898"
+source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "bitflags 2.9.4",
  "futures-core",
@@ -1426,7 +1426,7 @@ dependencies = [
 [[package]]
 name = "vexide-devices"
 version = "0.8.0"
-source = "git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack#327a7d623228d511ee704535b97d39046e92e898"
+source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "bitflags 2.9.4",
  "bytemuck",
@@ -1436,13 +1436,13 @@ dependencies = [
  "smart-leds-trait",
  "snafu",
  "vex-sdk",
- "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack)",
+ "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
 ]
 
 [[package]]
 name = "vexide-macro"
 version = "0.4.0"
-source = "git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack#327a7d623228d511ee704535b97d39046e92e898"
+source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1452,7 +1452,7 @@ dependencies = [
 [[package]]
 name = "vexide-startup"
 version = "0.5.0"
-source = "git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack#327a7d623228d511ee704535b97d39046e92e898"
+source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "bitflags 2.9.4",
  "compile-time",
@@ -1462,7 +1462,7 @@ dependencies = [
  "vex-sdk",
  "vex-sdk-jumptable",
  "vex-sdk-mock",
- "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=refactor%2Fabort-stack)",
+ "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
 ]
 
 [[package]]
