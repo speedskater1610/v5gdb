@@ -50,7 +50,6 @@ async fn main() -> anyhow::Result<()> {
         exit(1);
     };
 
-
     gdb.wait().await?;
 
     Ok(())
@@ -73,15 +72,30 @@ async fn serve_device_serial(device: SerialDevice, server: TcpListener) -> anyho
                     let mut incoming_bytes = &program_output[..size];
 
                     while !incoming_bytes.is_empty() {
-                        match decoder.push(&*incoming_bytes) {
+                        // If we receive any invalid packets, they might be prints from the user, so
+                        // we should print them out as-is.
+
+                        match decoder.push(incoming_bytes) {
                             Ok(Some(report)) => {
-                                incoming_bytes = &incoming_bytes[report.parsed_size()..];
                                 let packet = &decoder.dest()[..report.frame_size()];
-                                handle_packet(&mut conn, packet).await?;
+                                let was_valid = handle_packet(&mut conn, packet).await;
+
+                                if !was_valid {
+                                    // If we receive an invalid packet, fall back to assuming it's
+                                    // just raw data and print it out.
+                                    stderr().write_all(&incoming_bytes[..report.parsed_size()]).await?;
+                                }
+
                                 decoder.reset();
+                                incoming_bytes = &incoming_bytes[report.parsed_size()..];
                             }
                             Err(_) => {
-                                eprintln!("[COBS decode failed]");
+                                // We are only discarding one byte, so print that one.
+                                let invalid_byte = incoming_bytes[0];
+                                stderr().write_all(&[invalid_byte]).await?;
+
+                                // Skip one byte and try to resynchronize
+                                incoming_bytes = &incoming_bytes[1..];
                                 decoder.reset();
                             },
                             _ => {}
@@ -106,23 +120,25 @@ async fn serve_device_serial(device: SerialDevice, server: TcpListener) -> anyho
     Ok(())
 }
 
-async fn handle_packet(writer: &mut TcpStream, packet: &[u8]) -> anyhow::Result<()> {
+/// Handles a packet from the V5 device and returns whether it was valid.
+async fn handle_packet(writer: &mut TcpStream, packet: &[u8]) -> bool {
     let Some(channel_byte) = packet.first() else {
-        eprintln!("[Missing channel]");
-        return Ok(());
+        // Missing channel
+        return false;
     };
 
     let body = &packet[1..];
 
     match channel_byte {
         b'u' => {
-            stderr().write_all(body).await?;
+            _ = stderr().write_all(body).await;
         }
         b'd' => {
-            writer.write_all(body).await?;
+            _ = writer.write_all(body).await;
         }
-        _ => eprintln!("[Bad channel]"),
+        // Unknown channel
+        _ => return false,
     }
 
-    Ok(())
+    true
 }

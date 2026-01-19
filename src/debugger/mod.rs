@@ -94,6 +94,8 @@ impl<S: Transport> V5Debugger<S> {
         // If this is the first time a breakpoint has happened, then we'll set up the state machine
         // for GDB.
         let mut gdb = self.gdb.take().unwrap_or_else(|| {
+            self.stream.initialize();
+
             let buffer = self.gdb_buffer.take().unwrap();
             let stub = GdbStubBuilder::new(self.stream.clone())
                 .with_packet_buffer(buffer)
@@ -127,7 +129,6 @@ impl<S: Transport> V5Debugger<S> {
 
 unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
     fn initialize(&mut self) {
-        self.stream.initialize();
         self.register_internal_breakpoints();
         crate::sdk::competition::install_override();
     }
