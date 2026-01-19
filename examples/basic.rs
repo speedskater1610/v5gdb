@@ -23,7 +23,7 @@ async fn main(_peripherals: Peripherals) {
 
     println!("Hello, world");
 
-    v5gdb::breakpoint();
+    v5gdb::breakpoint!();
 
     let n = fib(40);
     println!("{n}");

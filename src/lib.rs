@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 #![cfg_attr(not(target_arch = "arm"), allow(unused))]
 
-use core::{any::Any, arch::asm};
+use core::any::Any;
 use std::sync::{Mutex, OnceLock};
 
 use crate::exceptions::DebugEventContext;
@@ -76,11 +76,16 @@ pub fn install(debugger: impl Debugger + 'static) {
     DEBUGGER.get().unwrap().try_lock().unwrap().initialize();
 }
 
-#[allow(clippy::inline_always)]
-#[inline(always)]
-pub fn breakpoint() {
-    #[cfg(target_arch = "arm")]
-    unsafe {
-        asm!("bkpt", options(nostack, nomem, preserves_flags));
-    }
+/// Manually trigger a breakpoint.
+///
+/// This should only be run if a debugger is installed. If no debugger is installed, this will
+/// crash your program instead of pausing it.
+#[macro_export]
+macro_rules! breakpoint {
+    () => {
+        #[cfg(target_arch = "arm")]
+        unsafe {
+            ::core::arch::asm!("bkpt", options(nostack, nomem, preserves_flags));
+        }
+    };
 }
