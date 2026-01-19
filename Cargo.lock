@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "aarch32-cpu"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5db6700cf01549520abec199376115e1ceb6fde1d1de30064f0f230be8a0c305"
+dependencies = [
+ "arbitrary-int 2.0.0",
+ "arm-targets",
+ "bitbybit",
+ "critical-section",
+ "num_enum",
+ "thiserror",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -78,9 +92,9 @@ checksum = "c858caffa49edfc4ecc45a4bec37abd3e88041a2903816f10f990b7b41abc281"
 
 [[package]]
 name = "arm-targets"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3371884971a96d71d8bd4e781188a7d327d7e5e455d07ef4c352922c66695e9e"
+checksum = "8d29a37f252452446b67d5e50dee82a6ce12781218b915244bb6507c10b72812"
 
 [[package]]
 name = "async-lock"
@@ -288,20 +302,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
-name = "cortex-ar"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ea2a354642e242870bc43b57a517359b0be6e96d302b2811cd0644c979c54e"
-dependencies = [
- "arbitrary-int 2.0.0",
- "arm-targets",
- "bitbybit",
- "critical-section",
- "num_enum",
- "thiserror",
-]
-
-[[package]]
 name = "crc"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -381,7 +381,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1240,11 +1240,11 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 name = "v5gdb"
 version = "0.1.0"
 dependencies = [
+ "aarch32-cpu",
  "anyhow",
  "arbitrary-int 2.0.0",
  "bitbybit",
  "cobs",
- "cortex-ar",
  "critical-section",
  "derive-mmio",
  "gdbstub",

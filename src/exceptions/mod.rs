@@ -38,7 +38,7 @@ mod arm {
         sync::atomic::{AtomicBool, Ordering},
     };
 
-    use cortex_ar::asm::dsb;
+    use aarch32_cpu::asm::dsb;
 
     use crate::{
         DEBUGGER,
@@ -48,13 +48,16 @@ mod arm {
 
     core::arch::global_asm!(include_str!("./overlay.S"), options(raw));
 
-    /// Handles a debug event
+    /// Handles a debug event.
+    ///
+    /// This function is called from the abort handler routines in `overlay.S` once they've been
+    /// activated with [`install_vectors`].
     ///
     /// # Safety
     ///
     /// Must be passed a debug event context that's valid for reads and writes and lives for the
     /// duration of this function call.
-    #[unsafe(no_mangle)]
+    #[unsafe(export_name = "v5gdb_handle_debug_event")]
     #[instruction_set(arm::a32)]
     pub unsafe extern "aapcs" fn handle_debug_event(ctx: *mut DebugEventContext) {
         unsafe {
@@ -70,6 +73,7 @@ mod arm {
 
     static ORIGINAL_VECTOR_ADDRESSES_SET: AtomicBool = AtomicBool::new(false);
 
+    /// Registers a set of custom CPU exception handlers that can handle debug events.
     pub fn install_vectors() {
         unsafe extern "C" {
             static debugger_vector_table: c_void;

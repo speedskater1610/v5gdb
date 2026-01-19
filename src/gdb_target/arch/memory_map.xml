@@ -3,6 +3,6 @@
           PUBLIC "+//IDN gnu.org//DTD GDB Memory Map V1.0//EN"
                  "http://sourceware.org/gdb/gdb-memory-map.dtd">
 <memory-map>
-    <memory type="rom" start="0x00000000" length="0x03800000"/>
-    <memory type="ram" start="0x03800000" length="0x7C800000"/>
+    <memory type="rom" start="0x100000" length="0x2b00000"/>
+    <memory type="ram" start="0x02c00000" length="0x5400000"/>
 </memory-map>

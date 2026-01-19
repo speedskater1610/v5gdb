@@ -1,9 +1,4 @@
-use std::hint::black_box;
-
-use v5gdb::{
-    debugger::V5Debugger,
-    transport::{StdioTransport, mux::ChannelId},
-};
+use v5gdb::{debugger::V5Debugger, transport::StdioTransport};
 use vexide::prelude::*;
 
 #[inline(never)]

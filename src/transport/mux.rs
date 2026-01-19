@@ -13,8 +13,8 @@
 
 use core::{arch::global_asm, ptr};
 
+use aarch32_cpu::asm::{dsb, isb};
 use cobs::CobsEncoder;
-use cortex_ar::asm::{dsb, isb};
 
 use crate::cpu::cache::{self, CacheTarget};
 

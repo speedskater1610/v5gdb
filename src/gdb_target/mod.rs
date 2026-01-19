@@ -15,6 +15,7 @@ use gdbstub::{
                 singlethread::{SingleThreadBase, SingleThreadResumeOps},
             },
             breakpoints::BreakpointsOps,
+            host_io::HostIoErrno,
             memory_map::{MemoryMap, MemoryMapOps},
             monitor_cmd::MonitorCmdOps,
         },
@@ -37,6 +38,7 @@ use crate::{
 
 pub mod arch;
 pub mod breakpoint;
+pub mod memory;
 pub mod monitor;
 pub mod resume;
 pub mod single_register_access;
@@ -211,28 +213,22 @@ impl SingleThreadBase for V5Target {
     }
 
     fn read_addrs(&mut self, start_addr: u32, data: &mut [u8]) -> TargetResult<usize, Self> {
-        if start_addr < 0x0300_0000 {
-            return Err(TargetError::NonFatal);
+        let bytes_read = memory::read_memory(start_addr, data);
+        if bytes_read == 0 {
+            return Err(TargetError::Errno(HostIoErrno::EFAULT as u8));
         }
 
-        // TODO: check MMU table to ensure these pages are readable.
-        unsafe {
-            core::ptr::copy(start_addr as *const u8, data.as_mut_ptr(), data.len());
-        }
-
-        Ok(data.len())
+        Ok(bytes_read)
     }
 
     fn write_addrs(&mut self, start_addr: u32, data: &[u8]) -> TargetResult<(), Self> {
-        if start_addr < 0x0300_0000 {
-            return Err(TargetError::NonFatal);
-        }
+        let success = memory::write_memory(start_addr, data);
 
-        unsafe {
-            core::ptr::copy(data.as_ptr(), start_addr as *mut u8, data.len());
+        if success {
+            Ok(())
+        } else {
+            Err(TargetError::Errno(HostIoErrno::EFAULT as u8))
         }
-
-        Ok(())
     }
 
     fn support_resume(&mut self) -> Option<SingleThreadResumeOps<'_, Self>> {

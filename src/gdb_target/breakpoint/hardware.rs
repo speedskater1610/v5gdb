@@ -1,7 +1,7 @@
 use core::fmt::{self, Debug, Formatter};
 
+use aarch32_cpu::cache::clean_and_invalidate_data_cache_line_to_poc;
 use arbitrary_int::*;
-use cortex_ar::cache::clean_and_invalidate_data_cache_line_to_poc;
 use gdbstub::target::{TargetResult, ext::breakpoints::HwBreakpoint};
 use zynq7000::devcfg::MmioDevCfg;
 
@@ -139,7 +139,7 @@ impl HwBreakpointManager {
                 .unwrap();
         }
 
-        cortex_ar::asm::dsb();
+        aarch32_cpu::asm::dsb();
 
         // Route breakpoint/watchpoint debug events to debug exceptions. This allows us to catch
         // them at runtime as prefetch/data aborts instead of halting the processor.
@@ -150,8 +150,8 @@ impl HwBreakpointManager {
                 .with_monitor_debug_mode(true)
         });
 
-        cortex_ar::asm::dsb();
-        cortex_ar::asm::isb();
+        aarch32_cpu::asm::dsb();
+        aarch32_cpu::asm::isb();
     }
 
     #[must_use]
@@ -226,8 +226,8 @@ impl HwBreakpointManager {
             })
             .unwrap();
 
-        cortex_ar::asm::dsb();
-        cortex_ar::asm::isb();
+        aarch32_cpu::asm::dsb();
+        aarch32_cpu::asm::isb();
 
         self.used_breakpoints[bkpt_index] = true;
 
@@ -277,8 +277,8 @@ impl HwBreakpointManager {
             self.used_breakpoints[bkpt_index as usize] = false;
         }
 
-        cortex_ar::asm::dsb();
-        cortex_ar::asm::isb();
+        aarch32_cpu::asm::dsb();
+        aarch32_cpu::asm::isb();
 
         anything_removed
     }
