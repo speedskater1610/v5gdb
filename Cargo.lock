@@ -1098,6 +1098,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1269,14 +1275,15 @@ dependencies = [
  "anyhow",
  "arbitrary-int 2.0.0",
  "bitbybit",
+ "cfg-if",
  "cobs",
  "critical-section",
  "derive-mmio",
  "gdbstub",
  "snafu",
+ "spin",
  "vex-sdk",
  "vexide",
- "vexide-devices 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zynq7000",
 ]
 
@@ -1364,8 +1371,8 @@ source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746
 dependencies = [
  "vex-sdk",
  "vexide-async",
- "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
- "vexide-devices 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
+ "vexide-core",
+ "vexide-devices",
  "vexide-macro",
  "vexide-startup",
 ]
@@ -1385,18 +1392,6 @@ dependencies = [
 [[package]]
 name = "vexide-core"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd71ec659102e83112e80a652a119629e6a42ed6aa16281c94732f61e4021bd4"
-dependencies = [
- "bitflags 2.9.4",
- "futures-core",
- "pin-project",
- "vex-sdk",
-]
-
-[[package]]
-name = "vexide-core"
-version = "0.8.0"
 source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "bitflags 2.9.4",
@@ -1409,23 +1404,6 @@ dependencies = [
 [[package]]
 name = "vexide-devices"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2905ccde48b6756ded33f8c160688e7e27c3d804ae038ffa56665cc5f4a8512"
-dependencies = [
- "bitflags 2.9.4",
- "bytemuck",
- "libm",
- "mint",
- "rgb",
- "smart-leds-trait",
- "snafu",
- "vex-sdk",
- "vexide-core 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "vexide-devices"
-version = "0.8.0"
 source = "git+https://github.com/vexide/vexide.git?branch=main#5c1c3967a59a32746cc52a0d5280e01dfcb1e0df"
 dependencies = [
  "bitflags 2.9.4",
@@ -1436,7 +1414,7 @@ dependencies = [
  "smart-leds-trait",
  "snafu",
  "vex-sdk",
- "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
+ "vexide-core",
 ]
 
 [[package]]
@@ -1462,7 +1440,7 @@ dependencies = [
  "vex-sdk",
  "vex-sdk-jumptable",
  "vex-sdk-mock",
- "vexide-core 0.8.0 (git+https://github.com/vexide/vexide.git?branch=main)",
+ "vexide-core",
 ]
 
 [[package]]

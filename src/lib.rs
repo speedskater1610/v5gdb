@@ -1,8 +1,13 @@
 #![allow(missing_docs)]
+#![no_std]
 #![cfg_attr(not(target_arch = "arm"), allow(unused))]
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 use core::any::Any;
-use std::sync::{Mutex, OnceLock};
+
+use spin::{Mutex, Once};
 
 use crate::exceptions::DebugEventContext;
 
@@ -41,7 +46,7 @@ pub mod debugger {
     }
 }
 
-pub static DEBUGGER: OnceLock<Mutex<&mut dyn Debugger>> = OnceLock::new();
+pub static DEBUGGER: Once<Mutex<&mut dyn Debugger>> = Once::new();
 
 /// Debugger implementation.
 ///
@@ -64,11 +69,18 @@ pub unsafe trait Debugger: Send + Any {
 }
 
 /// Set the current debugger.
+///
+/// This will move the given debugger onto the heap, so it's more expensive than [`install_by_ref`].
+#[cfg(feature = "alloc")]
 pub fn install(debugger: impl Debugger + 'static) {
-    DEBUGGER
-        .set(Mutex::new(Box::leak(Box::new(debugger))))
-        .map_err(|_| ())
-        .expect("A debugger is already installed.");
+    use alloc::boxed::Box;
+    install_by_ref(Box::leak(Box::new(debugger)));
+}
+
+/// Set the current debugger, by reference.
+pub fn install_by_ref(debugger: &'static mut dyn Debugger) {
+    assert!(!DEBUGGER.is_completed(), "A debugger is already installed.");
+    DEBUGGER.call_once(|| Mutex::new(debugger));
 
     #[cfg(target_arch = "arm")]
     exceptions::install_vectors();

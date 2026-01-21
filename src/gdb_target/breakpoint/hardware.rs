@@ -348,21 +348,27 @@ impl From<Specificity> for BreakpointType {
 
 impl Debug for HwBreakpointManager {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let bkpt_values = (0..self.capabilities.num_breakpoints)
-            .map(|i| self.mmio.read_breakpoint_value(i as usize).unwrap())
-            .collect::<Vec<_>>();
+        let mut bkpt_values = [0; 16];
+        let mut bkpt_ctrls = [BreakpointControl::ZERO; 16];
 
-        let bkpt_ctrls = (0..self.capabilities.num_breakpoints)
-            .map(|i| self.mmio.read_breakpoint_ctrl(i as usize).unwrap())
-            .collect::<Vec<_>>();
+        for i in 0..self.capabilities.num_breakpoints.min(16) {
+            bkpt_values[i as usize] = self.mmio.read_breakpoint_value(i as usize).unwrap();
+            bkpt_ctrls[i as usize] = self.mmio.read_breakpoint_ctrl(i as usize).unwrap();
+        }
 
         f.debug_struct("HwBreakpointManager")
             .field("locked", &self.locked())
             .field("capabilities", &self.capabilities)
             .field("used_breakpoints", &self.used_breakpoints)
             .field("mmio_ptr", &unsafe { self.mmio.ptr() })
-            .field("bkpt_values", &bkpt_values)
-            .field("bkpt_ctrls", &bkpt_ctrls)
+            .field(
+                "bkpt_values",
+                &&bkpt_values[..self.capabilities.num_breakpoints as usize],
+            )
+            .field(
+                "bkpt_ctrls",
+                &&bkpt_ctrls[..self.capabilities.num_breakpoints as usize],
+            )
             .finish_non_exhaustive()
     }
 }

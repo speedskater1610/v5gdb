@@ -1,4 +1,4 @@
-use std::{ops::Range, ptr};
+use core::{ops::Range, ptr};
 
 use crate::cpu::vmsa::TranslationTable;
 

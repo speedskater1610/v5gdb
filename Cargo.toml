@@ -14,13 +14,17 @@ rust-version = "1.93"
 [workspace]
 members = ["cli","xtask"]
 
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[features]
+default = ["alloc"]
+alloc = []
+
 [profile.release]
 opt-level = "z"
 lto = false
 debug = true
-
-[profile.dev.package.cobs]
-opt-level = "z"
 
 # These fields configure default behavior for uploads with `cargo v5`.
 [package.metadata.v5]
@@ -40,9 +44,10 @@ vex-sdk = "0.28.0"
 snafu = { version = "0.8.9", default-features = false, features = [
     "rust_1_81",
 ] }
-vexide-devices = { version = "0.8.0", default-features = false }
 cobs = { version = "0.5.0", default-features = false }
 aarch32-cpu = { version = "0.1.0", features = ["critical-section-single-core"] }
+cfg-if = "1.0.4"
+spin = { version = "0.10.0", default-features = false, features = ["mutex", "once", "spin_mutex"] }
 
 [dev-dependencies]
 anyhow = "1.0.100"

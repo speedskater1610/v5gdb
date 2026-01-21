@@ -1,6 +1,9 @@
 //! Main debugger loop and event handling logic.
 
-use core::convert::Infallible;
+use core::{
+    convert::Infallible,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use gdbstub::stub::{
     GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
@@ -14,7 +17,7 @@ use crate::{
     debugger::sdk::InternalBreakpoint,
     exceptions::DebugEventContext,
     gdb_target::{V5Target, breakpoint::hardware::Specificity},
-    transport::Transport,
+    transport::{Transport, TransportError},
 };
 
 pub mod sdk;
@@ -22,10 +25,10 @@ pub mod sdk;
 #[derive(Debug, Snafu)]
 pub enum DebuggerError {
     #[snafu(context(false))]
-    Io { source: std::io::Error },
+    Io { source: TransportError },
     #[snafu(context(false))]
     GdbStub {
-        source: GdbStubError<Infallible, std::io::Error>,
+        source: GdbStubError<Infallible, TransportError>,
     },
 }
 
@@ -42,11 +45,24 @@ impl<S: Transport> V5Debugger<S> {
     /// Creates a new debugger.
     #[must_use]
     pub fn new(stream: S) -> Self {
+        const GDB_PACKET_BUFFER_SIZE: usize = 0x2000;
+        static mut GDB_PACKET_BUFFER: [u8; GDB_PACKET_BUFFER_SIZE] = [0; _];
+        static GDB_PACKET_BUFFER_CLAIMED: AtomicBool = AtomicBool::new(false);
+
+        if GDB_PACKET_BUFFER_CLAIMED.swap(true, Ordering::Acquire) {
+            panic!("Cannot create multiple debuggers");
+        }
+
+        // SAFETY: The mutable ownership over the buffer can only be taken once.
+        let gdb_buffer = unsafe {
+            core::slice::from_raw_parts_mut(&raw mut GDB_PACKET_BUFFER[0], GDB_PACKET_BUFFER_SIZE)
+        };
+
         Self {
             target: V5Target::new(&mut unsafe { DevCfg::new_mmio_fixed() }),
             internal_breaks: None,
             stream,
-            gdb_buffer: Some(Box::leak(vec![0; 0x2000].into_boxed_slice())),
+            gdb_buffer: Some(gdb_buffer),
             gdb: None,
         }
     }
