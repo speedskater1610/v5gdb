@@ -57,7 +57,7 @@ where
     /// Creates a new debugger.
     #[must_use]
     pub fn new(stream: S) -> Self {
-        const GDB_PACKET_BUFFER_SIZE: usize = 0x2000;
+        const GDB_PACKET_BUFFER_SIZE: usize = 4096;
         static mut GDB_PACKET_BUFFER: [u8; GDB_PACKET_BUFFER_SIZE] = [0; _];
         static GDB_PACKET_BUFFER_CLAIMED: AtomicBool = AtomicBool::new(false);
 

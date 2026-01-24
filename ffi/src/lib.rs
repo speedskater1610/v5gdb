@@ -1,7 +1,7 @@
 #![no_std]
 
 use core::{
-    arch::{asm, global_asm},
+    arch::global_asm,
     ffi::{CStr, c_char, c_void},
     fmt::Write,
     panic::PanicInfo,
@@ -14,6 +14,10 @@ use v5gdb::{
     debugger::V5Debugger,
     transport::{StdioTransport, TransportError},
 };
+
+use crate::panic::ErrorReport;
+
+mod panic;
 
 /// A custom transport method for communicating with GDB.
 #[derive(Debug, Clone, Copy)]
@@ -141,31 +145,21 @@ pub extern "C" fn breakpoint() {
 
 #[panic_handler]
 fn panic_handler(panic: &PanicInfo) -> ! {
-    struct Serial;
+    let mut report = ErrorReport::begin();
+    _ = writeln!(report, "v5gdb {panic}");
 
-    impl Write for Serial {
-        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            unsafe {
-                vex_sdk::vexSerialWriteBuffer(1, s.as_ptr(), s.len() as u32);
-                Ok(())
-            }
-        }
-    }
-
-    _ = write!(Serial, "{panic}");
-
-    unsafe {
-        loop {
-            asm!("udf #32");
-        }
+    loop {
+        unsafe { vex_sdk::vexTasksRun(); }
     }
 }
 
-global_asm!("
+global_asm!(
+    "
 .text
 .arm
 
 .weak vexTasksRun
 vexTasksRun:
     b vexBackgroundProcessing
-");
+"
+);
