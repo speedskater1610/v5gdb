@@ -149,7 +149,9 @@ fn panic_handler(panic: &PanicInfo) -> ! {
     _ = writeln!(report, "v5gdb {panic}");
 
     loop {
-        unsafe { vex_sdk::vexTasksRun(); }
+        unsafe {
+            vex_sdk::vexTasksRun();
+        }
     }
 }
 
