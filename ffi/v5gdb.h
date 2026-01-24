@@ -165,7 +165,7 @@ inline void install(BaseTransport const& transport) {
 
 /// Manually triggers a breakpoint.
 inline void breakpoint() {
-    impl::v5gdb_breakpoint();
+    __asm__ volatile ("bkpt");
 }
 
 } // namespace v5gdb
