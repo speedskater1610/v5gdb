@@ -8,10 +8,12 @@ use core::{
 use gdbstub::{
     conn::{Connection, ConnectionExt},
     stub::{
-        GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
+        GdbStub, GdbStubBuilder, GdbStubError, SingleThreadStopReason,
+        state_machine::GdbStubStateMachine,
     },
 };
 use snafu::Snafu;
+use spin::{Mutex, MutexGuard};
 use zynq7000::devcfg::DevCfg;
 
 use crate::{
@@ -20,7 +22,7 @@ use crate::{
     debugger::sdk::InternalBreakpoint,
     exceptions::DebugEventContext,
     gdb_target::{V5Target, breakpoint::hardware::Specificity},
-    transport::{Transport, TransportError},
+    transport::TransportError,
 };
 
 pub mod sdk;
@@ -29,21 +31,29 @@ pub mod sdk;
 pub enum DebuggerError {
     #[snafu(context(false))]
     Io { source: TransportError },
-    #[snafu(context(false))]
     GdbStub {
-        source: GdbStubError<Infallible, TransportError>,
+        inner: GdbStubError<Infallible, TransportError>,
     },
 }
 
-/// Debugger state machine for handling remote connections.
-pub struct V5Debugger<S: Connection + ConnectionExt> {
-    target: V5Target,
-    internal_breaks: Option<[(InternalBreakpoint, u32); 1]>,
-    gdb: Option<GdbStubStateMachine<'static, V5Target, S>>,
-    initialized: bool,
+impl From<GdbStubError<Infallible, TransportError>> for DebuggerError {
+    fn from(value: GdbStubError<Infallible, TransportError>) -> Self {
+        Self::GdbStub { inner: value }
+    }
 }
 
-impl<S: Transport> V5Debugger<S> {
+/// Debugger manager.
+pub struct V5Debugger<S>
+where
+    S: Connection<Error = TransportError> + ConnectionExt,
+{
+    state: Mutex<DebuggerState<'static, S>>,
+}
+
+impl<S> V5Debugger<S>
+where
+    S: Connection<Error = TransportError> + ConnectionExt,
+{
     /// Creates a new debugger.
     #[must_use]
     pub fn new(stream: S) -> Self {
@@ -60,24 +70,158 @@ impl<S: Transport> V5Debugger<S> {
             core::slice::from_raw_parts_mut(&raw mut GDB_PACKET_BUFFER[0], GDB_PACKET_BUFFER_SIZE)
         };
 
-        let mut target = V5Target::new(&mut unsafe { DevCfg::new_mmio_fixed() });
+        let target = V5Target::new(&mut unsafe { DevCfg::new_mmio_fixed() });
 
         Self {
-            gdb: {
-                let stub = GdbStubBuilder::new(stream)
-                    .with_packet_buffer(gdb_buffer)
-                    .build()
-                    .unwrap();
-
-                Some(stub.run_state_machine(&mut target).unwrap())
-            },
-            target,
-            internal_breaks: None,
-            initialized: false,
+            state: Mutex::new(DebuggerState {
+                gdb: {
+                    Some(
+                        GdbStubBuilder::new(stream)
+                            .with_packet_buffer(gdb_buffer)
+                            .build()
+                            .unwrap(),
+                    )
+                },
+                stub: None,
+                target,
+                internal_breaks: None,
+            }),
         }
     }
 
-    fn drive_state_machine<'a>(
+    /// Returns the debugger's internal state.
+    #[must_use]
+    pub fn state<'a>(&'a self) -> MutexGuard<'a, DebuggerState<'static, S>> {
+        self.state.lock()
+    }
+}
+
+unsafe impl<S> Debugger for V5Debugger<S>
+where
+    S: Connection<Error = TransportError> + ConnectionExt + Send + 'static,
+{
+    fn initialize(&self) {
+        self.state().register_internal_breakpoints();
+        crate::sdk::competition::install_override();
+    }
+
+    unsafe fn handle_debug_event(&self, ctx: &mut DebugEventContext) {
+        let mut state = self.state();
+
+        state.target.set_breakpoints_ignored(true);
+
+        let was_locked = state.target.hw_manager.locked();
+        state.target.hw_manager.set_locked(false);
+        state.target.exception_ctx = ctx.clone();
+
+        let reason = state.target.hw_manager.last_break_reason();
+
+        let bkpt_address = state.target.exception_ctx.program_counter;
+        let tracked_bkpt_id = state.target.query_sw_breakpoint(bkpt_address);
+
+        let is_manual_bkpt =
+            tracked_bkpt_id.is_none() && reason == Some(DebugEventReason::BkptInstr);
+
+        // If we previously wanted to single step, we can permanently remove the breakpoint that
+        // supported that now. The saved single step request isn't removed yet so that the stop
+        // reason we report to GDB is correct.
+        if let Some(single_step) = state.target.single_step_request {
+            state.target.hw_manager.remove_breakpoint_at(
+                single_step.target_addr,
+                Specificity::Mismatch,
+                single_step.kind,
+            );
+        }
+
+        if is_manual_bkpt {
+            // Normally we try to avoid an infinite loop of breakpoints by replacing tracked
+            // software breakpoints with their real instructions and re-running them. But if the
+            // `bkpt` *is* the real instruction then we don't need to do the normal
+            // replace-and-rerun thing. Instead, we just skip over it because its side-effect has
+            // been completed.
+
+            // SAFETY: Since the address was able to be properly fetched, it implies it is valid for
+            // reads.
+            let instr = unsafe { state.target.exception_ctx.read_instr() };
+            state.target.exception_ctx.program_counter += instr.size() as u32;
+        }
+
+        let mut show_debug_console = true;
+
+        if let Some(id) = tracked_bkpt_id
+            && let Some(bkpt) = state.target.breaks[id]
+        {
+            // Some tracked breakpoints weren't requested by the user and are just used internally.
+            // These should be transparent to the user by default. Note: It's possible
+            // for a breakpoint to be both requested by the user and used internally.
+            show_debug_console = bkpt.reason.user;
+
+            // If this breakpoint is used internally, run any necessary callbacks.
+            if bkpt.reason.internal {
+                show_debug_console |= state.handle_internal_breakpoint();
+            }
+        }
+
+        if show_debug_console {
+            state.run_debug_console();
+        }
+
+        // Write any modifications back to the stack so the assembly code restores the updated state
+        *ctx = state.target.exception_ctx.clone();
+
+        state.target.hw_manager.set_locked(was_locked);
+        state.target.set_breakpoints_ignored(false);
+    }
+}
+
+/// Internal mutable state of debugger.
+pub struct DebuggerState<'a, S>
+where
+    S: Connection<Error = TransportError> + ConnectionExt,
+{
+    pub target: V5Target,
+    internal_breaks: Option<[(InternalBreakpoint, u32); 1]>,
+    gdb: Option<GdbStub<'a, V5Target, S>>,
+    stub: Option<GdbStubStateMachine<'a, V5Target, S>>,
+}
+
+impl<S> DebuggerState<'_, S>
+where
+    S: Connection<Error = TransportError> + ConnectionExt,
+{
+    fn has_client(&self) -> bool {
+        let disconnected = matches!(
+            &self.stub,
+            None | Some(GdbStubStateMachine::Disconnected(_))
+        );
+        !disconnected
+    }
+
+    /// Runs the debug console until the user indicates they want to continue program execution.
+    fn run_debug_console(&mut self) {
+        if let Some(gdb) = self.gdb.take() {
+            // Initial GDB setup - calls connection setup callback.
+            self.stub = Some(gdb.run_state_machine(&mut self.target).unwrap());
+        }
+        let mut gdb = self.stub.take().unwrap();
+
+        // Enter debugging loop until it's time to resume.
+
+        self.target.reset_resume();
+        while !self.target.resume {
+            unsafe {
+                vex_sdk::vexTasksRun();
+            }
+
+            gdb = Self::tick_state_machine(gdb, &mut self.target)
+                .expect("debugger encountered an error");
+        }
+
+        self.target.resume = false;
+        self.stub = Some(gdb);
+    }
+
+    fn tick_state_machine<'a>(
         gdb: GdbStubStateMachine<'a, V5Target, S>,
         target: &mut V5Target,
     ) -> Result<GdbStubStateMachine<'a, V5Target, S>, DebuggerError> {
@@ -107,119 +251,5 @@ impl<S: Transport> V5Debugger<S> {
             }
             GdbStubStateMachine::Disconnected(gdb) => Ok(gdb.return_to_idle()),
         }
-    }
-
-    /// Returns the debugger's internal state.
-    #[must_use]
-    pub const fn target(&mut self) -> &mut V5Target {
-        &mut self.target
-    }
-
-    /// Runs the debug console until the user indicates they want to continue program execution.
-    fn run_debug_console(&mut self) {
-        let mut gdb = self.gdb.take().unwrap();
-        if !self.initialized {
-            self.initialized = true;
-
-            match &mut gdb {
-                GdbStubStateMachine::Idle(idle) => {
-                    idle.borrow_conn().initialize();
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        // Enter debugging loop until it's time to resume.
-
-        self.target.reset_resume();
-        while !self.target.resume {
-            unsafe {
-                vex_sdk::vexTasksRun();
-            }
-
-            gdb = Self::drive_state_machine(gdb, &mut self.target)
-                .expect("debugger encountered an error");
-        }
-
-        self.target.resume = false;
-        self.gdb = Some(gdb);
-    }
-
-    fn has_client(&self) -> bool {
-        let disconnected = matches!(&self.gdb, None | Some(GdbStubStateMachine::Disconnected(_)));
-        !disconnected
-    }
-}
-
-unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
-    fn initialize(&mut self) {
-        self.register_internal_breakpoints();
-        crate::sdk::competition::install_override();
-    }
-
-    unsafe fn handle_debug_event(&mut self, ctx: &mut DebugEventContext) {
-        self.target.set_breakpoints_ignored(true);
-
-        let was_locked = self.target.hw_manager.locked();
-        self.target.hw_manager.set_locked(false);
-        self.target.exception_ctx = ctx.clone();
-
-        let reason = self.target.hw_manager.last_break_reason();
-
-        let bkpt_address = self.target.exception_ctx.program_counter;
-        let tracked_bkpt_id = self.target.query_sw_breakpoint(bkpt_address);
-
-        let is_manual_bkpt =
-            tracked_bkpt_id.is_none() && reason == Some(DebugEventReason::BkptInstr);
-
-        // If we previously wanted to single step, we can permanently remove the breakpoint that
-        // supported that now. The saved single step request isn't removed yet so that the stop
-        // reason we report to GDB is correct.
-        if let Some(single_step) = self.target.single_step_request {
-            self.target.hw_manager.remove_breakpoint_at(
-                single_step.target_addr,
-                Specificity::Mismatch,
-                single_step.kind,
-            );
-        }
-
-        if is_manual_bkpt {
-            // Normally we try to avoid an infinite loop of breakpoints by replacing tracked
-            // software breakpoints with their real instructions and re-running them. But if the
-            // `bkpt` *is* the real instruction then we don't need to do the normal
-            // replace-and-rerun thing. Instead, we just skip over it because its side-effect has
-            // been completed.
-
-            // SAFETY: Since the address was able to be properly fetched, it implies it is valid for
-            // reads.
-            let instr = unsafe { self.target.exception_ctx.read_instr() };
-            self.target.exception_ctx.program_counter += instr.size() as u32;
-        }
-
-        let mut show_debug_console = true;
-
-        if let Some(id) = tracked_bkpt_id
-            && let Some(bkpt) = self.target.breaks[id]
-        {
-            // Some tracked breakpoints weren't requested by the user and are just used internally.
-            // These should be transparent to the user by default. Note: It's possible
-            // for a breakpoint to be both requested by the user and used internally.
-            show_debug_console = bkpt.reason.user;
-
-            // If this breakpoint is used internally, run any necessary callbacks.
-            if bkpt.reason.internal {
-                show_debug_console |= self.handle_internal_breakpoint();
-            }
-        }
-
-        if show_debug_console {
-            self.run_debug_console();
-        }
-
-        // Write any modifications back to the stack so the assembly code restores the updated state
-        *ctx = self.target.exception_ctx.clone();
-
-        self.target.hw_manager.set_locked(was_locked);
-        self.target.set_breakpoints_ignored(false);
     }
 }

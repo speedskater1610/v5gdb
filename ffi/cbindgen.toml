@@ -1,0 +1,6 @@
+pragma_once = true
+include_version = true
+namespace = "v5gdb"
+
+[fn]
+no_return = "[[noreturn]]"

@@ -1280,6 +1280,7 @@ dependencies = [
  "critical-section",
  "derive-mmio",
  "gdbstub",
+ "log",
  "snafu",
  "spin",
  "vex-sdk",
@@ -1296,6 +1297,16 @@ dependencies = [
  "tokio",
  "vex-v5-serial",
  "which",
+]
+
+[[package]]
+name = "v5gdb-ffi"
+version = "0.1.0"
+dependencies = [
+ "gdbstub",
+ "spin",
+ "v5gdb",
+ "vex-sdk",
 ]
 
 [[package]]

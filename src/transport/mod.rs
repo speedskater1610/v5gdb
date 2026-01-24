@@ -1,4 +1,7 @@
-use core::{error::Error, fmt::{self, Debug, Display}};
+use core::{
+    error::Error,
+    fmt::{self, Debug, Display},
+};
 
 use gdbstub::conn::{Connection, ConnectionExt};
 use vex_sdk::vexTasksRun;
@@ -23,11 +26,6 @@ impl From<&'static str> for TransportError {
     }
 }
 
-/// A means of communicating with a debug console.
-pub trait Transport: Connection<Error = TransportError> + ConnectionExt + Send + Clone {
-    fn initialize(&mut self) {}
-}
-
 /// Debug logging via stdio.
 #[derive(Debug)]
 pub struct StdioTransport;
@@ -41,13 +39,6 @@ impl Default for StdioTransport {
 impl Clone for StdioTransport {
     fn clone(&self) -> Self {
         Self
-    }
-}
-
-impl Transport for StdioTransport {
-    fn initialize(&mut self) {
-        #[cfg(target_arch = "arm")]
-        mux::enable_auto_muxing();
     }
 }
 
@@ -69,6 +60,13 @@ impl Connection for StdioTransport {
     fn flush(&mut self) -> Result<(), Self::Error> {
         #[cfg(target_arch = "arm")]
         mux::flush_serial();
+        Ok(())
+    }
+
+    fn on_session_start(&mut self) -> Result<(), Self::Error> {
+        #[cfg(target_arch = "arm")]
+        mux::enable_auto_muxing();
+
         Ok(())
     }
 }

@@ -1,0 +1,14 @@
+[package]
+name = "v5gdb-ffi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "v5gdb"
+crate-type = ["staticlib"]
+
+[dependencies]
+v5gdb = { path = "../", default-features = false }
+gdbstub.workspace = true
+spin.workspace = true
+vex-sdk.workspace = true

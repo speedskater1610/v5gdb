@@ -7,7 +7,7 @@ extern crate alloc;
 
 use core::any::Any;
 
-use spin::{Mutex, Once};
+use spin::Once;
 
 use crate::exceptions::DebugEventContext;
 
@@ -23,39 +23,49 @@ pub mod transport;
 
 #[cfg(not(target_arch = "arm"))]
 pub mod debugger {
-    use crate::{Debugger, transport::Transport};
+    use gdbstub::conn::{Connection, ConnectionExt};
 
-    pub struct V5Debugger<S: Transport> {
-        _stream: S,
+    use crate::{Debugger, transport::TransportError};
+
+    pub struct V5Debugger<S>
+    where
+        S: Connection<Error = TransportError> + ConnectionExt,
+    {
+        _stream: spin::Mutex<S>,
     }
 
-    impl<S: Transport> V5Debugger<S> {
+    impl<S: Connection<Error = TransportError> + ConnectionExt> V5Debugger<S> {
         /// Creates a new debugger.
         #[must_use]
         pub fn new(stream: S) -> Self {
-            Self { _stream: stream }
+            Self {
+                _stream: spin::Mutex::new(stream),
+            }
         }
     }
 
-    unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
-        fn initialize(&mut self) {}
+    unsafe impl<S> Debugger for V5Debugger<S>
+    where
+        S: Connection<Error = TransportError> + ConnectionExt + Send + 'static,
+    {
+        fn initialize(&self) {}
 
-        unsafe fn handle_debug_event(&mut self, _ctx: &mut crate::exceptions::DebugEventContext) {
+        unsafe fn handle_debug_event(&self, _ctx: &mut crate::exceptions::DebugEventContext) {
             unimplemented!()
         }
     }
 }
 
-pub static DEBUGGER: Once<Mutex<&mut dyn Debugger>> = Once::new();
+pub static DEBUGGER: Once<&dyn Debugger> = Once::new();
 
 /// Debugger implementation.
 ///
 /// # Safety
 ///
 /// The debugger must not corrupt the CPU state when handling debug events.
-pub unsafe trait Debugger: Send + Any {
+pub unsafe trait Debugger: Send + Sync + Any {
     /// Initializes the debugger.
-    fn initialize(&mut self);
+    fn initialize(&self);
 
     /// A callback function which is run whenever a breakpoint is triggered.
     ///
@@ -65,7 +75,7 @@ pub unsafe trait Debugger: Send + Any {
     /// # Safety
     ///
     /// The given fault must represent valid, saved CPU state.
-    unsafe fn handle_debug_event(&mut self, ctx: &mut DebugEventContext);
+    unsafe fn handle_debug_event(&self, ctx: &mut DebugEventContext);
 }
 
 /// Set the current debugger.
@@ -78,14 +88,14 @@ pub fn install(debugger: impl Debugger + 'static) {
 }
 
 /// Set the current debugger, by reference.
-pub fn install_by_ref(debugger: &'static mut dyn Debugger) {
+pub fn install_by_ref(debugger: &'static dyn Debugger) {
     assert!(!DEBUGGER.is_completed(), "A debugger is already installed.");
-    DEBUGGER.call_once(|| Mutex::new(debugger));
+    DEBUGGER.call_once(|| debugger);
 
     #[cfg(target_arch = "arm")]
     exceptions::install_vectors();
 
-    DEBUGGER.get().unwrap().try_lock().unwrap().initialize();
+    DEBUGGER.get().unwrap().initialize();
 }
 
 /// Manually trigger a breakpoint.

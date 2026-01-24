@@ -1,15 +1,19 @@
 //! Alternative implementations of SDK functions under the debugger.
 
+use gdbstub::conn::{Connection, ConnectionExt};
 use vex_sdk::*;
 
-use crate::{debugger::V5Debugger, transport::Transport};
+use crate::{debugger::DebuggerState, transport::TransportError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InternalBreakpoint {
     SystemExitRequest,
 }
 
-impl<S: Transport> V5Debugger<S> {
+impl<S> DebuggerState<'_, S>
+where
+    S: Connection<Error = TransportError> + ConnectionExt,
+{
     pub(crate) fn register_internal_breakpoints(&mut self) {
         assert!(self.internal_breaks.is_none());
 

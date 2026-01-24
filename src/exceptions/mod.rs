@@ -69,12 +69,7 @@ mod arm {
     pub unsafe extern "aapcs" fn handle_debug_event(ctx: *mut DebugEventContext) {
         unsafe {
             core::arch::asm!("cpsie i"); // unmask IRQs
-            DEBUGGER
-                .get()
-                .unwrap()
-                .try_lock()
-                .unwrap()
-                .handle_debug_event(&mut *ctx);
+            DEBUGGER.get().unwrap().handle_debug_event(&mut *ctx);
         }
     }
 
@@ -83,7 +78,9 @@ mod arm {
     /// Registers a set of custom CPU exception handlers that can handle debug events.
     pub fn install_vectors() {
         unsafe extern "C" {
+            #[link_name = "v5gdb_debugger_vector_table"]
             static debugger_vector_table: c_void;
+            #[link_name = "v5gdb_original_vector_addresses"]
             static mut original_vector_addresses: [u32; 8];
         }
 
