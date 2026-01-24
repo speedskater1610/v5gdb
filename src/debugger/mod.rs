@@ -5,8 +5,11 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use gdbstub::stub::{
-    GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
+use gdbstub::{
+    conn::{Connection, ConnectionExt},
+    stub::{
+        GdbStubBuilder, GdbStubError, SingleThreadStopReason, state_machine::GdbStubStateMachine,
+    },
 };
 use snafu::Snafu;
 use zynq7000::devcfg::DevCfg;
@@ -33,12 +36,11 @@ pub enum DebuggerError {
 }
 
 /// Debugger state machine for handling remote connections.
-pub struct V5Debugger<S: Transport> {
+pub struct V5Debugger<S: Connection + ConnectionExt> {
     target: V5Target,
     internal_breaks: Option<[(InternalBreakpoint, u32); 1]>,
-    stream: S,
-    gdb_buffer: Option<&'static mut [u8]>,
     gdb: Option<GdbStubStateMachine<'static, V5Target, S>>,
+    initialized: bool,
 }
 
 impl<S: Transport> V5Debugger<S> {
@@ -58,12 +60,20 @@ impl<S: Transport> V5Debugger<S> {
             core::slice::from_raw_parts_mut(&raw mut GDB_PACKET_BUFFER[0], GDB_PACKET_BUFFER_SIZE)
         };
 
+        let mut target = V5Target::new(&mut unsafe { DevCfg::new_mmio_fixed() });
+
         Self {
-            target: V5Target::new(&mut unsafe { DevCfg::new_mmio_fixed() }),
+            gdb: {
+                let stub = GdbStubBuilder::new(stream)
+                    .with_packet_buffer(gdb_buffer)
+                    .build()
+                    .unwrap();
+
+                Some(stub.run_state_machine(&mut target).unwrap())
+            },
+            target,
             internal_breaks: None,
-            stream,
-            gdb_buffer: Some(gdb_buffer),
-            gdb: None,
+            initialized: false,
         }
     }
 
@@ -107,19 +117,17 @@ impl<S: Transport> V5Debugger<S> {
 
     /// Runs the debug console until the user indicates they want to continue program execution.
     fn run_debug_console(&mut self) {
-        // If this is the first time a breakpoint has happened, then we'll set up the state machine
-        // for GDB.
-        let mut gdb = self.gdb.take().unwrap_or_else(|| {
-            self.stream.initialize();
+        let mut gdb = self.gdb.take().unwrap();
+        if !self.initialized {
+            self.initialized = true;
 
-            let buffer = self.gdb_buffer.take().unwrap();
-            let stub = GdbStubBuilder::new(self.stream.clone())
-                .with_packet_buffer(buffer)
-                .build()
-                .unwrap();
-
-            stub.run_state_machine(&mut self.target).unwrap()
-        });
+            match &mut gdb {
+                GdbStubStateMachine::Idle(idle) => {
+                    idle.borrow_conn().initialize();
+                }
+                _ => unreachable!(),
+            }
+        }
 
         // Enter debugging loop until it's time to resume.
 
