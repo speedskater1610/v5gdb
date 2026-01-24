@@ -1,6 +1,6 @@
-# v5gdb: The VEX V5 debugger
+# v5gdb: VEX V5 debugger
 
-v5gdb is a debugger backend for the VEX V5 platform that is compatible with GDB and LLDB. It uses a combination of hardware and software breakpoints to implement features like line-by-line stepping and user-defined breakpoints. Users are also given the ability to read program state such as the arguments passed to the active function or global variables.
+v5gdb is a debugger backend for the VEX V5 platform that is compatible with GDB. It uses a combination of hardware and software breakpoints to implement features like line-by-line stepping and user-defined breakpoints. Users are also given the ability to read program state such as the arguments passed to the active function or global variables.
 
 ## Getting Started
 
