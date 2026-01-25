@@ -1293,6 +1293,7 @@ name = "v5gdb-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "cobs",
  "tokio",
  "vex-v5-serial",
