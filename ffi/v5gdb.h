@@ -1,3 +1,5 @@
+// v5gdb version v0.1.0, <https://github.com/vexide/v5gdb>
+
 #pragma once
 
 #include <cstdarg>

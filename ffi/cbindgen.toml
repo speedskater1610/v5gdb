@@ -1,3 +1,5 @@
+# cbindgen 0.29.2
+
 pragma_once = true
 include_version = true
 namespace = "v5gdb"

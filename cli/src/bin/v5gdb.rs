@@ -57,9 +57,15 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut cmd = Command::new(resolved_gdb);
-    for elf_file in args.elf_files_to_debug {
-        cmd.arg(format!("--eval-command=file {elf_file}"));
+
+    let mut elves = args.elf_files_to_debug.iter();
+    if let Some(main_elf_file) = elves.next() {
+        cmd.arg(format!("--eval-command=file {main_elf_file}"));
     }
+    for elf_file in elves {
+        cmd.arg(format!("--eval-command=add-symbol-file {elf_file}"));
+    }
+
     cmd.arg("--eval-command=target remote :35537");
 
     let mut gdb = cmd.spawn()?;

@@ -1,3 +1,5 @@
+//! C FFI interface for v5gdb.
+
 #![no_std]
 
 use core::{
@@ -155,11 +157,12 @@ fn panic_handler(panic: &PanicInfo) -> ! {
     }
 }
 
+// In the VEX partner SDK, vexTasksRun is renamed to vexBackgroundProcessing.
+// We add a weak alias for vexBackgroundProcessing as vexTasksRun in case we're in that environment.
 global_asm!(
     "
 .text
 .arm
-
 .weak vexTasksRun
 vexTasksRun:
     b vexBackgroundProcessing
