@@ -65,7 +65,7 @@ mod arm {
     /// Must be passed a debug event context that's valid for reads and writes and lives for the
     /// duration of this function call.
     #[unsafe(export_name = "v5gdb_handle_debug_event")]
-    #[instruction_set(arm::a32)]
+    #[cfg_attr(target_os = "vexos", instruction_set(arm::a32))]
     pub unsafe extern "aapcs" fn handle_debug_event(ctx: *mut DebugEventContext) {
         unsafe {
             core::arch::asm!("cpsie i"); // unmask IRQs

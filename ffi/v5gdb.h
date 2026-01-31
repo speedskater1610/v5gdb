@@ -1,10 +1,6 @@
-// v5gdb version v0.1.0, <https://github.com/vexide/v5gdb>
-
 #pragma once
 
-#include <cstdarg>
 #include <cstdint>
-#include <cstdlib>
 
 #if __cplusplus >= 202302L
     #include <expected>
@@ -13,7 +9,6 @@
 #endif
 
 namespace v5gdb {
-
 namespace impl {
     /// A custom transport method for communicating with GDB.
     struct TransportImpl {
@@ -43,7 +38,6 @@ namespace impl {
     };
 
     extern "C" {
-
     /// Install the debugger, communicating with GDB over the V5's USB serial port.
     void v5gdb_install_stdio();
 
@@ -53,7 +47,6 @@ namespace impl {
 
     /// Manually triggers a breakpoint.
     void v5gdb_breakpoint();
-
     } // extern "C"
 } // namespace impl
 
@@ -63,7 +56,7 @@ class BaseTransport {
 
   private:
     virtual void install() const = 0;
-    friend void install(BaseTransport const& install);
+    friend void install(BaseTransport const& transport);
 };
 
 #if __cplusplus >= 202302L
@@ -85,17 +78,17 @@ class Transport: public BaseTransport {
     [[nodiscard]]
     virtual std::expected<std::uint8_t, char const*> read() noexcept = 0;
 
-    virtual ~Transport() noexcept = default;
+    ~Transport() noexcept override = default;
 
     [[nodiscard]]
     impl::TransportImpl as_impl() const noexcept {
         return impl::TransportImpl {
             .data = static_cast<void*>(const_cast<Transport*>(this)),
-            .initialize = Transport::initialize_trampoline,
-            .write_buf = Transport::write_trampoline,
-            .flush = Transport::flush_trampoline,
-            .peek_byte = Transport::peek_trampoline,
-            .read_byte = Transport::read_trampoline,
+            .initialize = initialize_trampoline,
+            .write_buf = write_trampoline,
+            .flush = flush_trampoline,
+            .peek_byte = peek_trampoline,
+            .read_byte = read_trampoline,
         };
     }
 
@@ -105,9 +98,10 @@ class Transport: public BaseTransport {
     }
 
     static char const*
-    write_trampoline(void* data, const uint8_t* buf, uintptr_t len) {
-        auto result = static_cast<Transport*>(data)->write(std::span(buf, len));
-        if (result.has_value()) {
+    write_trampoline(void* data, const uint8_t* buf, uintptr_t const len) {
+        if (auto result =
+                static_cast<Transport*>(data)->write(std::span(buf, len));
+            result.has_value()) {
             return nullptr;
         } else {
             return result.error();
@@ -115,8 +109,8 @@ class Transport: public BaseTransport {
     }
 
     static char const* flush_trampoline(void* data) {
-        auto result = static_cast<Transport*>(data)->flush();
-        if (result.has_value()) {
+        if (auto result = static_cast<Transport*>(data)->flush();
+            result.has_value()) {
             return nullptr;
         } else {
             return result.error();
@@ -124,8 +118,8 @@ class Transport: public BaseTransport {
     }
 
     static int32_t peek_trampoline(void* data, char const** error) {
-        auto result = static_cast<Transport*>(data)->peek();
-        if (result.has_value()) {
+        if (auto result = static_cast<Transport*>(data)->peek();
+            result.has_value()) {
             return result.value();
         } else {
             *error = result.error();
@@ -134,8 +128,8 @@ class Transport: public BaseTransport {
     }
 
     static uint8_t read_trampoline(void* data, char const** error) {
-        auto result = static_cast<Transport*>(data)->read();
-        if (result.has_value()) {
+        if (auto result = static_cast<Transport*>(data)->read();
+            result.has_value()) {
             return result.value();
         } else {
             *error = result.error();
@@ -143,7 +137,7 @@ class Transport: public BaseTransport {
         }
     }
 
-    virtual void install() const override {
+    void install() const override {
         impl::v5gdb_install_custom(this->as_impl());
     }
 };
@@ -155,7 +149,7 @@ class StdioTransport: public BaseTransport {
     StdioTransport() = default;
 
   private:
-    virtual void install() const override {
+    void install() const override {
         impl::v5gdb_install_stdio();
     }
 };
@@ -167,7 +161,6 @@ inline void install(BaseTransport const& transport) {
 
 /// Manually triggers a breakpoint.
 inline void breakpoint() {
-    __asm__ volatile ("bkpt");
+    __asm__ volatile("bkpt");
 }
-
 } // namespace v5gdb
