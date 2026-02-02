@@ -1,5 +1,6 @@
 use std::{process::exit, time::Duration};
 
+use clap::Parser;
 use cobs::CobsDecoderOwned;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, stderr},
@@ -13,14 +14,16 @@ use vex_v5_serial::{
 };
 use which::which;
 
+#[derive(Debug, clap::Parser)]
+struct Args {
+    #[clap(long)]
+    tcp: Option<String>,
+    elf_files_to_debug: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut args = std::env::args().skip(1);
-
-    let Some(elf_file) = args.next() else {
-        eprintln!("Usage: v5gdb <PATH-TO-ELF-FILE-TO-DEBUG>");
-        exit(1);
-    };
+    let args = Args::parse();
 
     let mut all_devices = serial::find_devices()?;
     if all_devices.is_empty() {
@@ -29,8 +32,15 @@ async fn main() -> anyhow::Result<()> {
     }
     let device = all_devices.remove(0);
 
-    let server = TcpListener::bind("127.0.0.1:35537").await?;
-    tokio::spawn(async move { serve_device_serial(device, server).await.unwrap() });
+    let addr = args.tcp.as_deref().unwrap_or("127.0.0.1:35537");
+    let server = TcpListener::bind(addr).await?;
+    let server_task =
+        tokio::spawn(async move { serve_device_serial(device, server).await.unwrap() });
+
+    if args.tcp.is_some() {
+        server_task.await?;
+        return Ok(());
+    }
 
     let known_gdb_names = ["arm-none-eabi-gdb", "gdb-multiarch", "gdb"];
     let mut resolved_gdb = None;
@@ -47,7 +57,15 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut cmd = Command::new(resolved_gdb);
-    cmd.arg(format!("--eval-command=file {elf_file}"));
+
+    let mut elves = args.elf_files_to_debug.iter();
+    if let Some(main_elf_file) = elves.next() {
+        cmd.arg(format!("--eval-command=file {main_elf_file}"));
+    }
+    for elf_file in elves {
+        cmd.arg(format!("--eval-command=add-symbol-file {elf_file}"));
+    }
+
     cmd.arg("--eval-command=target remote :35537");
 
     let mut gdb = cmd.spawn()?;

@@ -5,7 +5,7 @@
 //! libraries like v5rt and vex_sdk_jumptable. The wrapper functions normally get inlined into their
 //! call sites when LTO is on, so the functionality in this module only works when LTO is off.
 
-use std::{arch::global_asm, ptr};
+use core::{arch::global_asm, ptr};
 
 use aarch32_cpu::asm::{dsb, isb};
 

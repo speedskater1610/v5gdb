@@ -65,16 +65,11 @@ mod arm {
     /// Must be passed a debug event context that's valid for reads and writes and lives for the
     /// duration of this function call.
     #[unsafe(export_name = "v5gdb_handle_debug_event")]
-    #[instruction_set(arm::a32)]
+    #[cfg_attr(target_os = "vexos", instruction_set(arm::a32))]
     pub unsafe extern "aapcs" fn handle_debug_event(ctx: *mut DebugEventContext) {
         unsafe {
             core::arch::asm!("cpsie i"); // unmask IRQs
-            DEBUGGER
-                .get()
-                .unwrap()
-                .try_lock()
-                .unwrap()
-                .handle_debug_event(&mut *ctx);
+            DEBUGGER.get().unwrap().handle_debug_event(&mut *ctx);
         }
     }
 
@@ -83,25 +78,28 @@ mod arm {
     /// Registers a set of custom CPU exception handlers that can handle debug events.
     pub fn install_vectors() {
         unsafe extern "C" {
+            #[link_name = "v5gdb_debugger_vector_table"]
             static debugger_vector_table: c_void;
+            #[link_name = "v5gdb_original_vector_addresses"]
             static mut original_vector_addresses: [u32; 8];
         }
 
         if !ORIGINAL_VECTOR_ADDRESSES_SET.swap(true, Ordering::Relaxed) {
             let old_vbar = VectorBaseAddressRegister::read();
 
-            unsafe {
-                // No exceptions should be allowed to occur while updating the vector table, since
-                // the vector table is responsible for handling those exceptions.
-                asm!("cpsid if", options(nostack, nomem, preserves_flags));
+            critical_section::with(|_| unsafe {
+                // No exceptions should be allowed to occur while updating the vector table,
+                // since the vector table is responsible for handling those
+                // exceptions.
+                asm!("cpsid f", options(nostack, nomem, preserves_flags));
 
                 // The default stack that VEXos gives us in abort mode is only 1kb, which is
-                // extremely inadequate for what we're doing in the debug event handler, so we need
-                // to load our own stack region.
+                // extremely inadequate for what we're doing in the debug event handler, so we
+                // need to load our own stack region.
                 //
                 // In an effort to avoid requiring linkerscript modification, we're storing this
-                // stack as an uninitialized static global rather than giving it it's own explicit
-                // linker section.
+                // stack as an uninitialized static global rather than giving it it's own
+                // explicit linker section.
                 asm!(
                     // abort mode
                     "cps #0b10111",
@@ -118,8 +116,8 @@ mod arm {
 
                 dsb();
 
-                asm!("cpsie if", options(nostack, nomem, preserves_flags));
-            }
+                asm!("cpsie f", options(nostack, nomem, preserves_flags));
+            });
         }
 
         unsafe {

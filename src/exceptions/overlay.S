@@ -3,9 +3,9 @@
 
 @ An overlay vector table that intercepts debug exception (breakpoints and watchpoints) but
 @ otherwise delegates exceptions to an existing vector table.
-.global debugger_vector_table
+.global v5gdb_debugger_vector_table
 .align 5
-debugger_vector_table:
+v5gdb_debugger_vector_table:
     @ To fall through to an original vector table entry, we jump to the offset of the
     @ original_vector_addresses array which stores the address of the entry we need.
     ldr pc, original_reset_addr @ Reset
@@ -22,7 +22,8 @@ debugger_vector_table:
 @ Since we pre-calculate the offsets, evaluating (*original_vector_addresses) + N is the same as
 @ evaluating *(original_vector_addresses + N). The latter can be done in just one instruction, which
 @ allows us to use it in the overlay vector table.
-original_vector_addresses:
+.global v5gdb_original_vector_addresses
+v5gdb_original_vector_addresses:
     original_reset_addr: .word 0
     original_udf_addr: .word 0
     original_svc_addr: .word 0

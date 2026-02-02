@@ -1,6 +1,6 @@
 //! Access to Virtual Memory System Architecture registers.
 
-use std::arch::asm;
+use core::arch::asm;
 
 use aarch32_cpu::{
     asm::{dsb, isb},

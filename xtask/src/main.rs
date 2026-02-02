@@ -3,7 +3,7 @@ use std::{
     ffi::{OsStr, OsString},
     io::{BufRead, BufReader, Read, Write, stderr},
     path::Path,
-    process::{Command, Stdio},
+    process::{Command, Stdio, exit},
     time::Duration,
 };
 
@@ -13,12 +13,29 @@ use indicatif::ProgressBar;
 #[derive(Debug, Parser)]
 enum Args {
     Test,
+    /// Build v5gdb as a static library for FFI.
+    Build {
+        target: FfiTarget,
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            value_name = "CARGO-OPTIONS"
+        )]
+        extra_args: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+enum FfiTarget {
+    Pros,
+    Vexcode,
 }
 
 fn main() {
     let args = Args::parse();
     match args {
         Args::Test => test(),
+        Args::Build { target, extra_args } => build(target, extra_args),
     }
 }
 
@@ -123,4 +140,28 @@ fn test() {
             stderr.write_all(&err_buf).unwrap();
         }
     }
+}
+
+fn build(target: FfiTarget, opts: Vec<String>) {
+    let target_args: &[&str] = match target {
+        // Normal hard-float build, but avoid building std to prevent accidentally using the wrong
+        // allocator. Rust's std port will try to manage the heap, but PROS is already doing that.
+        FfiTarget::Pros => &[
+            "--target=armv7a-vex-v5",
+            "-Zbuild-std=core",
+        ],
+        FfiTarget::Vexcode => &[
+            "--target=armv7a-none-eabi",
+            "-Zbuild-std=core",
+        ],
+    };
+
+    let mut cargo = Command::new(cargo());
+    cargo.args(["build", "-p=v5gdb-ffi"]);
+    cargo.args(target_args);
+    cargo.args(&opts); // e.g. --release
+
+    let mut child = cargo.spawn().expect("Failed to start cargo");
+    let code = child.wait().unwrap_or_default();
+    exit(code.code().unwrap_or(1));
 }

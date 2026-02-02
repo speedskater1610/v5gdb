@@ -19,7 +19,7 @@ fn fib(n: u64) -> u64 {
 
 #[vexide::main]
 async fn main(_peripherals: Peripherals) {
-    v5gdb::install(V5Debugger::new(StdioTransport::new()));
+    v5gdb::install(V5Debugger::new(StdioTransport));
 
     println!("Hello, world");
 

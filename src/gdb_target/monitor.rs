@@ -1,6 +1,5 @@
 use gdbstub::target::ext::monitor_cmd::{ConsoleOutput, MonitorCmd};
 use vex_sdk::*;
-use vexide_devices::controller::{Controller, ControllerId};
 
 use crate::{gdb_target::V5Target, sdk::competition};
 
@@ -43,17 +42,7 @@ impl MonitorCmd for V5Target {
                     }
                 }
             }
-            "ctrl" => {
-                let is_partner = args.next() == Some("partner");
-                let id = if is_partner {
-                    ControllerId::Partner
-                } else {
-                    ControllerId::Primary
-                };
-
-                let controller = unsafe { Controller::new(id) };
-                gdbstub::outputln!(out, "{id:?} controller: {:#?}", controller.state());
-            }
+            "ctrl" => gdbstub::outputln!(out, "Unimplemented"), // TODO
             "comp" => {
                 let change = args.next();
                 match change {
