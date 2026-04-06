@@ -20,6 +20,7 @@ jobs:
           token: ${{ github.token }}
           # target repo for depots
           repo: vexide/v5gdb
+          source-repo: vexide/v5gdb
           # makes the json output human readable
           readable-json: true
           ignore-non-template-assets: true
