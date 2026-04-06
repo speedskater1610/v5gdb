@@ -3,7 +3,7 @@ use core::fmt::{self, Debug, Formatter};
 use aarch32_cpu::cache::clean_and_invalidate_data_cache_line_to_poc;
 use arbitrary_int::*;
 use gdbstub::target::{TargetResult, ext::breakpoints::HwBreakpoint};
-use zynq7000::devcfg::MmioDevCfg;
+use zynq7000::devcfg;
 
 use crate::{
     cpu::{
@@ -40,7 +40,7 @@ impl HwBreakpointManager {
     ///
     /// - CPU debug features are hardware locked by the board.
     /// - The device has no MMIO interface for debug registers.
-    pub fn setup(devcfg: &mut MmioDevCfg<'_>) -> Self {
+    pub fn setup(devcfg: &mut devcfg::MmioRegisters<'_>) -> Self {
         // Enable access to the board's debug hardware. The devcfg registers are protected against
         // accidental writes, so we have to do extra work to access them or else we get a data abort
         // with "Permission fault (MMU)".

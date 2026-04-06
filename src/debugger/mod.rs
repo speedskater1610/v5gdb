@@ -14,7 +14,7 @@ use gdbstub::{
 };
 use snafu::Snafu;
 use spin::{Mutex, MutexGuard, Once};
-use zynq7000::devcfg::DevCfg;
+use zynq7000::devcfg;
 
 use crate::{
     Debugger,
@@ -71,7 +71,7 @@ where
             core::slice::from_raw_parts_mut(&raw mut GDB_PACKET_BUFFER[0], GDB_PACKET_BUFFER_SIZE)
         };
 
-        let target = V5Target::new(&mut unsafe { DevCfg::new_mmio_fixed() });
+        let target = V5Target::new(&mut unsafe { devcfg::Registers::new_mmio_fixed() });
 
         Self {
             state: Mutex::new(DebuggerState {

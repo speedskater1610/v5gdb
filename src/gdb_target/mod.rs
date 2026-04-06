@@ -21,7 +21,7 @@ use gdbstub::{
         },
     },
 };
-use zynq7000::devcfg::MmioDevCfg;
+use zynq7000::devcfg;
 
 use crate::{
     cpu::{ProgramStatus, debug::DebugEventReason},
@@ -86,7 +86,7 @@ pub struct Breakpoint {
 
 impl V5Target {
     #[must_use]
-    pub fn new(devcfg: &mut MmioDevCfg<'_>) -> Self {
+    pub fn new(devcfg: &mut devcfg::MmioRegisters<'_>) -> Self {
         Self {
             exception_ctx: DebugEventContext::default(),
             resume: false,
