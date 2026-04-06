@@ -112,7 +112,7 @@ catch_debug_event:
     pop {r1}
     msr spsr, r1
 
-    @ Pop user/system mode banked registers back - SP, LR
+    @ Pop user/system mode banked registers back - SP, LR (this switches to the user's stack).
     ldm sp, {sp,lr}^
     add sp, sp, #8
 
@@ -142,11 +142,12 @@ catch_debug_event:
     @ (above) to its new location. LR and SPSR are also banked.
     cps #0b11111
 
-    @ (Save old stack ptr, then...) Align stack to 8 bytes for the AAPCS call
+    @ (Save old stack ptr, then...) Align task's stack to 8 bytes for the AAPCS call
     mov r0, sp
     bic sp, sp, #0b111
 
-    @ Resume tasks - this might yield.
+    @ Resume tasks - this might yield. If that happens, it's important that the task's stack is
+    @ active and not the abort stack to prevent FreeRTOS from mistakenly detecting a stack overflow.
     push {r0,lr}
     blx xTaskResumeAll @ fn() -> u32
     pop {r0,lr}
