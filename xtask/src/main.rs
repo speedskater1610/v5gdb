@@ -1,19 +1,26 @@
 use std::{
     env,
     ffi::{OsStr, OsString},
+    fs,
     io::{BufRead, BufReader, Read, Write, stderr},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio, exit},
     time::Duration,
 };
 
+use cargo_metadata::Message;
 use clap::Parser;
+use fs_extra::dir::{CopyOptions, get_dir_content};
 use indicatif::ProgressBar;
+use serde_json::{Value, json};
 
 #[derive(Debug, Parser)]
 enum Args {
     Test,
     /// Build v5gdb as a static library for FFI.
+    ///
+    /// If the compilation target is "pros", a PROS template containing v5gdb will be built and its
+    /// path will be printed to the terminal.
     Build {
         target: FfiTarget,
         #[arg(
@@ -25,7 +32,7 @@ enum Args {
     },
 }
 
-#[derive(Debug, Clone, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
 enum FfiTarget {
     Pros,
     Vexcode,
@@ -147,15 +154,128 @@ fn build(target: FfiTarget, opts: Vec<String>) {
         // Normal hard-float build, but avoid building std to prevent accidentally using the wrong
         // allocator. Rust's std port will try to manage the heap, but PROS is already doing that.
         FfiTarget::Pros => &["--target=armv7a-vex-v5", "-Zbuild-std=core", "-Fv5gdb/pros"],
+        // A soft-float target is used to match VEXcode's ABI behavior.
         FfiTarget::Vexcode => &["--target=armv7a-none-eabi", "-Zbuild-std=core"],
     };
 
     let mut cargo = Command::new(cargo());
-    cargo.args(["build", "-p=v5gdb-ffi"]);
+    cargo.args([
+        "build",
+        "-p=v5gdb-ffi",
+        "--message-format=json-render-diagnostics",
+    ]);
     cargo.args(target_args);
     cargo.args(&opts); // e.g. --release
+    cargo.stdout(Stdio::piped());
 
     let mut child = cargo.spawn().expect("Failed to start cargo");
-    let code = child.wait().unwrap_or_default();
-    exit(code.code().unwrap_or(1));
+    let reader = BufReader::new(child.stdout.take().unwrap());
+
+    // Look for staticlib build outputs
+    let mut library_path = None;
+    for message in Message::parse_stream(reader) {
+        if let Message::CompilerArtifact(artifact) = message.unwrap() {
+            if artifact.target.is_staticlib() && artifact.target.name == "v5gdb" {
+                library_path = Some(artifact.filenames[0].clone());
+            }
+        }
+    }
+
+    let status = child.wait().unwrap_or_default();
+    if !status.success() {
+        exit(status.code().unwrap_or(1));
+    }
+
+    // Package pros builds if the build produced a staticlib output
+    if target == FfiTarget::Pros
+        && let Some(library_path) = library_path
+    {
+        make_pros_template(library_path.as_path().as_std_path());
+    }
+}
+
+fn make_pros_template(library: &Path) {
+    let cargo_manifest = fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../Cargo.toml"))
+        .expect("v5gdb Cargo.toml exists");
+    let cargo_manifest: Value =
+        toml::from_slice(&cargo_manifest).expect("v5gdb Cargo.toml is valid");
+
+    let package_version = cargo_manifest["package"]["version"].as_str().unwrap();
+
+    let target_dir = library.parent().unwrap();
+    let template_staging_dir = target_dir.join("pros-template");
+
+    let template_id = format!("v5gdb@{package_version}");
+    let template_dir = template_staging_dir.join(&template_id);
+
+    _ = fs::remove_dir_all(&template_staging_dir);
+    fs::create_dir_all(&template_dir).unwrap();
+
+    // Copy includes to template
+    let ffi_include_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../ffi/include");
+    fs_extra::copy_items(
+        &[ffi_include_dir],
+        &template_dir,
+        &CopyOptions {
+            overwrite: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // Copy artifact to template
+    let firmware_dir = template_dir.join("firmware");
+    let library_name = library.file_name().unwrap();
+
+    fs::create_dir(&firmware_dir).unwrap();
+    fs::copy(library, firmware_dir.join(library_name)).unwrap();
+
+    // Ensure template contents and create the manifest.
+    let contents = get_dir_content(&template_dir).unwrap();
+    let files = contents
+        .files
+        .iter()
+        .map(|s| Path::new(s))
+        .map(|p| p.strip_prefix(&template_dir).unwrap().to_path_buf())
+        .collect::<Vec<_>>();
+
+    let manifest = make_pros_manifest(&cargo_manifest, &files);
+    fs::write(template_dir.join("template.pros"), manifest).unwrap();
+
+    // Finally, zip the whole thing.
+    let zipfile = template_staging_dir.join(format!("{template_id}.zip"));
+    let mut zip_cmd = Command::new("zip")
+        .args(["-r", "-9"])
+        .arg(&zipfile)
+        .arg(&template_id)
+        .current_dir(&template_staging_dir)
+        .spawn()
+        .unwrap();
+
+    let zip_status = zip_cmd.wait().unwrap();
+    if !zip_status.success() {
+        exit(zip_status.code().unwrap_or(1));
+    }
+
+    println!("PROS Template: {}", zipfile.display());
+}
+
+fn make_pros_manifest(cargo_manifest: &Value, files: &[PathBuf]) -> Vec<u8> {
+    let pros_metadata = &cargo_manifest["package"]["metadata"]["pros"];
+
+    let pros_manifest = json!({
+        "metadata": pros_metadata["metadata"],
+        "name": cargo_manifest["package"]["name"],
+        "supported_kernels": pros_metadata["supported_kernels"],
+        "target": pros_metadata["target"],
+        "system_files": files,
+        "user_files": [],
+        "version": cargo_manifest["package"]["version"],
+    });
+
+    serde_json::to_vec(&json!({
+        "py/object": "pros.conductor.templates.external_template.ExternalTemplate",
+        "py/state": pros_manifest,
+    }))
+    .expect("manifest is valid")
 }

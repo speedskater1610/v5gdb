@@ -160,6 +160,7 @@ inline void install(BaseTransport const& transport) {
 }
 
 /// Manually triggers a breakpoint.
+[[gnu::always_inline]]
 inline void breakpoint() {
     __asm__ volatile("bkpt");
 }

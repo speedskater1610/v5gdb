@@ -11,6 +11,39 @@ repository = "https://github.com/vexide/v5gdb"
 homepage = "https://internals.vexide.dev/technical/debugger"
 rust-version = "1.93"
 
+# This is read by xtask to populate PROS template bundles.
+[package.metadata.pros]
+supported_kernels = "^4.2.2"
+target = "v5"
+metadata = {}
+
+
+[features]
+default = ["alloc"]
+
+# Enable Rust allocator integration.
+alloc = []
+
+# Enable FreeRTOS integration (enables thread-safety under FreeRTOS as well as the ability to
+# detect and manage RTOS tasks from the debugger).
+freertos = []
+
+# Enable PROS FreeRTOS integration (some FreeRTOS APIs have different names under the PROS port).
+pros = ["freertos"]
+
+
+[profile.release]
+opt-level = "z"
+lto = false
+debug = true
+
+# These fields configure default behavior for uploading examples with `cargo v5`.
+[package.metadata.v5]
+upload-strategy = "differential"
+slot = 1
+icon = "cool-x"
+compress = true
+
 [workspace]
 members = ["cli", "ffi", "xtask"]
 
@@ -23,25 +56,6 @@ spin = { version = "0.10.0", default-features = false, features = [
 ] }
 vex-sdk = "0.28.0"
 owo-colors = "4.2.3"
-
-[features]
-default = ["alloc"]
-alloc = []
-freertos = []
-pros = ["freertos"]
-
-[profile.release]
-opt-level = "z"
-lto = false
-debug = true
-debug-assertions = true
-
-# These fields configure default behavior for uploads with `cargo v5`.
-[package.metadata.v5]
-upload-strategy = "differential"
-slot = 1
-icon = "cool-x"
-compress = true
 
 [dependencies]
 arbitrary-int = "2.0.0"
