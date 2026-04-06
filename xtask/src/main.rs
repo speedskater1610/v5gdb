@@ -247,8 +247,8 @@ fn make_pros_template(library: &Path) {
     let mut zip_cmd = Command::new("zip")
         .args(["-r", "-9"])
         .arg(&zipfile)
-        .arg(&template_id)
-        .current_dir(&template_staging_dir)
+        .arg(".")
+        .current_dir(&template_dir)
         .spawn()
         .unwrap();
 

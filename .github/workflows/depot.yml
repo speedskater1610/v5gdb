@@ -13,7 +13,15 @@ jobs:
       # permits reading of releases and writing to the depot branch
       contents: write
     steps:
-      - name: Generate PROS depot
+      - name: Generate stable PROS depot
         uses: jerrylum/pros-depot@v1.0.0
         with:
           token: ${{ github.token }}
+          include_prereleases: stable-only
+          target_path: stable.json
+      - name: Generate beta PROS depot
+        uses: jerrylum/pros-depot@v1.0.0
+        with:
+          token: ${{ github.token }}
+          include_prereleases: prerelease-only
+          target_path: preview.json
