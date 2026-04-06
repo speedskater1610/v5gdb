@@ -1,0 +1,25 @@
+name: Populate Depot json
+
+on:
+  # runs when this repository's releases are modified
+  release:
+  # allows for manual dispatching of the workflow
+  workflow_dispatch:
+
+jobs:
+  populate:
+    runs-on: ubuntu-latest
+    permissions:
+      # permits reading of releases and writing to the depot branch
+      contents: write
+    steps:
+        # where to find gh action and what version to use
+      - uses: LemLib/pros-depot@dee5772e79a85bcf85a644d1b128604c15a95e4c
+        with:
+          # gives the github action the permissions specified above
+          token: ${{ github.token }}
+          # target repo for depots
+          repo: vexide/v5gdb
+          # makes the json output human readable
+          readable-json: true
+          ignore-non-template-assets: true
