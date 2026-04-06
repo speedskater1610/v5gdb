@@ -146,7 +146,8 @@ catch_debug_event:
     mov r0, sp
     bic sp, sp, #0b111
 
-    @ Resume tasks - this might yield.
+    @ Resume tasks - this might yield. It's important this is run with the system/user mode stack
+    @ to prevent false positive stack overflow checks.
     push {r0,lr}
     blx xTaskResumeAll @ fn() -> u32
     pop {r0,lr}
