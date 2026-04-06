@@ -211,13 +211,14 @@ fn make_pros_template(library: &Path) {
     _ = fs::remove_dir_all(&template_staging_dir);
     fs::create_dir_all(&template_dir).unwrap();
 
-    // Copy includes to template
-    let ffi_include_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../ffi/include");
-    fs_extra::copy_items(
-        &[ffi_include_dir],
+    // Copy includes and config files to template
+    let ffi_dist_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../ffi/dist");
+    fs_extra::dir::copy(
+        &ffi_dist_dir,
         &template_dir,
         &CopyOptions {
             overwrite: true,
+            content_only: true,
             ..Default::default()
         },
     )
@@ -227,10 +228,10 @@ fn make_pros_template(library: &Path) {
     let firmware_dir = template_dir.join("firmware");
     let library_name = library.file_name().unwrap();
 
-    fs::create_dir(&firmware_dir).unwrap();
+    _ = fs::create_dir(&firmware_dir);
     fs::copy(library, firmware_dir.join(library_name)).unwrap();
 
-    // Ensure template contents and create the manifest.
+    // Enumerate template contents and create the manifest.
     let contents = get_dir_content(&template_dir).unwrap();
     let files = contents
         .files
