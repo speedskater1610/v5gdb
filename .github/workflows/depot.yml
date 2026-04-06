@@ -1,4 +1,4 @@
-name: Populate Depot json
+name: Populate Depot JSON
 
 on:
   # runs when this repository's releases are modified
@@ -13,14 +13,7 @@ jobs:
       # permits reading of releases and writing to the depot branch
       contents: write
     steps:
-        # where to find gh action and what version to use
-      - uses: LemLib/pros-depot@dee5772e79a85bcf85a644d1b128604c15a95e4c
+      - name: Generate PROS depot
+        uses: jerrylum/pros-depot@v1.0.0
         with:
-          # gives the github action the permissions specified above
           token: ${{ github.token }}
-          # target repo for depots
-          repo: vexide/v5gdb
-          source-repo: vexide/v5gdb
-          # makes the json output human readable
-          readable-json: true
-          ignore-non-template-assets: true
