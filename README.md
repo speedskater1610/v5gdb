@@ -6,21 +6,31 @@ v5gdb is a debugger backend for the VEX V5 platform that is compatible with GDB.
 
 ## Getting Started
 
-Please read the [user manual](https://github.com/vexide/v5gdb/wiki)!
+Please read the [user manual]!
 
-## Goals
+[user manual]: https://github.com/vexide/v5gdb/wiki
 
-- Implement a debug server usable by an instance of `gdb`.
-- Support multiple methods of communication with a debugger client running on the user's PC.
-- Implement non-invasive breakpoint handling compatible with all existing VEX runtimes.
-- Remote management of dynamically-placed software breakpoints
-- Single-stepping and hardware breakpoints
-- On-device debugger setup via Rust and C APIs
-- Easy to add to existing VEX projects, including vexide, PROS, and VEXcode projects.
+## Features
+
+Here are the features of v5gdb that you can use today:
+
+- Debug server usable by an instance of `gdb`
+- Supports multiple methods of communication with a debugger client running on the user's PC
+- Transparent breakpoint handling compatible with all existing VEX runtimes
+- Supports remote management of dynamically-placed software/hardware breakpoints
+- Single-step through instructions and lines of code
+- Easy to configure and enable via Rust and C++ APIs
+
+## Future Goals
+
+Here are the features of v5gdb that aren't done yet or are planned for the future:
+
+- Easy to add to existing projects via a Rust crate and PROS template (for now, see the install instructions in the [user manual])
+- Step through inactive PROS tasks (right now, you can only step through the task that caused the most recent breakpoint)
 
 ## Design
 
-This project implements a debug server that can communicate with a GDB-compatible client over various transport methods. For more information, see the project's [wiki page](https://internals.vexide.dev/technical/debugger).
+This project implements a debug server that can communicate with a GDB-compatible client over various transport methods. For more information, see the project's [internals wiki page](https://internals.vexide.dev/technical/debugger).
 
 ## License
 
