@@ -14,9 +14,9 @@ Please read the [user manual]!
 
 Here are the features of v5gdb that you can use today:
 
-- Debug server usable by an instance of `gdb`
+- Debug server usable by the `gdb` command line tool
 - Supports multiple methods of communication with a debugger client running on the user's PC
-- Transparent breakpoint handling compatible with all existing VEX runtimes
+- Compatibility with vexide and PROS frameworks
 - Supports remote management of dynamically-placed software/hardware breakpoints
 - Single-step through instructions and lines of code
 - Easy to configure and enable via Rust and C++ APIs
@@ -26,7 +26,8 @@ Here are the features of v5gdb that you can use today:
 Here are the features of v5gdb that aren't done yet or are planned for the future:
 
 - Easy to add to existing projects via a Rust crate and PROS template (for now, see the install instructions in the [user manual])
-- Step through inactive PROS tasks (right now, you can only step through the task that caused the most recent breakpoint)
+- Step through inactive PROS tasks (right now you can only step through the task that caused the most recent breakpoint)
+- Compatibility with VEXcode framework (right now it crashes)
 
 ## Design
 
