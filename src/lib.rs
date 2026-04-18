@@ -17,6 +17,7 @@ pub mod debugger;
 pub mod exceptions;
 #[cfg(target_arch = "arm")]
 pub mod gdb_target;
+pub mod motors;
 #[cfg(target_arch = "arm")]
 mod sdk;
 mod sys;
@@ -33,6 +34,7 @@ pub mod debugger {
         S: Connection<Error = TransportError> + ConnectionExt,
     {
         _stream: spin::Mutex<S>,
+        _stop_motors_on_break: bool,
     }
 
     impl<S: Connection<Error = TransportError> + ConnectionExt> V5Debugger<S> {
@@ -41,7 +43,26 @@ pub mod debugger {
         pub fn new(stream: S) -> Self {
             Self {
                 _stream: spin::Mutex::new(stream),
+                _stop_motors_on_break: false,
             }
+        }
+
+        /// config wether all motors should be automatically stopped whenever
+        /// a breakpoint is triggered.
+        ///
+        /// Defaults to `false`; when `true`, every motor on every port is set to
+        /// 0 the moment a breakpoint fires, before the GDB console loop runs
+        ///
+        /// This can also be toggled at runtime from GDB with
+        ///
+        /// ```
+        /// monitor stop_motors on
+        /// monitor stop_motors off
+        /// ```
+        #[must_use]
+        pub fn with_motor_stop(mut self, enabled: bool) -> Self {
+            self._stop_motors_on_break = enabled;
+            self
         }
     }
 
@@ -51,7 +72,7 @@ pub mod debugger {
     {
         fn initialize(&self) {}
 
-        unsafe fn handle_debug_event(&self, _ctx: &mut crate::exceptions::DebugEventContext) {
+        unsafe fn handle_debug_event(&self, _ctx: &mut crate::exceptions::DebugEventContext) -> bool {
             unimplemented!()
         }
     }

@@ -22,6 +22,7 @@ use crate::{
     debugger::sdk::InternalBreakpoint,
     exceptions::DebugEventContext,
     gdb_target::{V5Target, breakpoint::hardware::Specificity},
+    motors::stop_all_motors,
     sys::{DebuggerSystem, System},
     transport::TransportError,
 };
@@ -49,6 +50,13 @@ where
     S: Connection<Error = TransportError> + ConnectionExt,
 {
     state: Mutex<DebuggerState<'static, S>>,
+    /// Whether to automatically stop all motors when a breakpoint fires.
+    ///
+    /// This is set via [`V5Debugger::with_motor_stop`] at construction time and
+    /// propagated into [`V5Target::stop_motors_on_break`] during
+    /// [`Debugger::initialize`]. It can subsequently be changed at runtime
+    /// through the `monitor stop_motors on/off` GDB command.
+    stop_motors_on_break: bool,
 }
 
 impl<S> V5Debugger<S>
@@ -56,6 +64,10 @@ where
     S: Connection<Error = TransportError> + ConnectionExt,
 {
     /// Creates a new debugger.
+    ///
+    /// Auto motor-stop on breakpoint is **disabled** by default. Enable it with
+    /// [`with_motor_stop`](Self::with_motor_stop), or toggle it at runtime from
+    /// GDB using `monitor stop_motors on`.
     #[must_use]
     pub fn new(stream: S) -> Self {
         const GDB_PACKET_BUFFER_SIZE: usize = 4096;
@@ -87,7 +99,43 @@ where
                 target,
                 internal_breaks: None,
             }),
+            stop_motors_on_break: false,
         }
+    }
+
+    /// config wether all motors should be auto stopped when ever a
+    /// breakpoint is triggered.
+    ///
+    /// when enabled, it calls `vexDeviceMotorVoltageSet(device, 0)` for
+    /// every smart port on the brain when a breakpoint fires; 
+    /// before the gdb console loop even starts.  
+    /// this means the robot stays put and stops, any motion
+    /// when you inspect state.
+    ///
+    /// The setting can also be toggled live from gdb at any time through :
+    ///
+    /// ```
+    /// (gdb) monitor stop_motors on
+    /// (gdb) monitor stop_motors off
+    /// (gdb) monitor stop_motors
+    /// ```
+    ///
+    /// Defaults to `false`.
+    ///
+    /// # Example :
+    ///
+    /// ```rust,no_run
+    /// use v5gdb::{debugger::V5Debugger, transport::StdioTransport};
+    ///
+    /// v5gdb::install(
+    ///     V5Debugger::new(StdioTransport)
+    ///         .with_motor_stop(true)
+    /// );
+    /// ```
+    #[must_use]
+    pub fn with_motor_stop(mut self, enabled: bool) -> Self {
+        self.stop_motors_on_break = enabled;
+        self
     }
 
     /// Returns the debugger's internal state.
@@ -106,7 +154,14 @@ where
         state.register_internal_breakpoints();
         System::initialize(&mut state.target);
         crate::sdk::competition::install_override();
-        log::debug!("Debugger initialized");
+
+        // copy the compile time default into the target state
+        // after this point the gdb,
+        //      `monitor stop_motors`,
+        // command is the way to change the flag
+        state.target.stop_motors_on_break = self.stop_motors_on_break;
+
+        log::debug!("Debugger initialized (stop_motors_on_break={})", self.stop_motors_on_break);
     }
 
     unsafe fn handle_debug_event(&self, ctx: &mut DebugEventContext) -> bool {
@@ -132,6 +187,23 @@ where
             log::error!("**** v5gdb: BREAKPOINT TRIGGERED ****");
             log::error!("Your program has been paused. Please connect a debugger.")
         });
+
+        // auto motor stop on breakpoint
+        //
+        // stop all motors before entering the gdb console loop
+        // This prevents the bot from driving away (or any motor movement, 
+        // but most usefull for drivetrain) while execution is paused.
+        //
+        // check the flag from `target.stop_motors_on_break` (not
+        // `self.stop_motors_on_break`) 
+        // 
+        // so that live changes via
+        // `monitor stop_motors on / off` take effect immediately on the next
+        // breakpoint without restarting the program.
+        if state.target.stop_motors_on_break {
+            log::debug!("auto motor-stop triggered by breakpoint");
+            stop_all_motors();
+        }
 
         let was_locked = state.target.hw_manager.locked();
         state.target.hw_manager.set_locked(false);
