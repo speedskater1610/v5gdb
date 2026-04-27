@@ -5,7 +5,7 @@
 //! This example shows the `with_motor_stop(true)` feature. 
 //! It:
 //!
-//! 1. Spin any motors that are plugged into the bot at +6 V
+//! 1. Spin any motors that are plugged into the bot at +6 V (6000 mV)
 //! 2. Runs the debugger with `with_motor_stop(true)`
 //! 3. It then hits a breakpoint where all of the motors stop.
 //! 4. Then resumes normally; meaning all the motors spin again.
@@ -29,7 +29,7 @@
 //!
 //!   Possibly useful gdb commands once connected:
 //!
-//!   ```text
+//!   ```sh
 //!   (gdb) monitor help              # list all monitor commands
 //!   (gdb) monitor stop_motors       # check current auto-stop setting
 //!   (gdb) monitor stop_motors on    # enable (already on in this example but off by default)
@@ -47,11 +47,11 @@ use v5gdb::{debugger::V5Debugger, transport::StdioTransport};
 use vex_sdk::{V5_MAX_DEVICE_PORTS, vexDeviceGetByIndex, vexDeviceMotorVoltageSet};
 use vexide::prelude::*;
 
-/// set all detected motors to `voltage_mv` millivolts.
+/// Set all detected motors to `voltage_mv` millivolts.
 ///
-/// ts mirrors the loop in `motors::stop_all_motors`
-/// non-motor devices on a port should silently ignore the call
-/// (the sdk should no-ops if the device type does not match)
+/// This mirrors the loop in `motors::stop_all_motors`
+/// non-motor devices on a port should silently ignore this call
+/// (the sdk should no-ops if the device type does not match).
 fn set_all_motors(voltage_mv: i32) {
     for port in 0..V5_MAX_DEVICE_PORTS {
         unsafe {
@@ -82,19 +82,24 @@ async fn main(_peripherals: Peripherals) {
     println!("Motors will spin at +6 V, then stop automatically at the breakpoint.");
     println!("Connect GDB, then type 'c' to resume and watch motors restart.");
 
-    // Snstalls the debugger with auto motor stop enabled
+    // Installs the debugger with auto-motor stop enabled.
     //
     // `with_motor_stop(true)` is the new builder method.
     // You can also enable it at runtime from GDB with:
+    //
     // ```sh
     // (gdb) monitor stop_motors on
     // ```
+    //
+    // If you dont want this feature to be active, not using 
+    // this builder method, will set it to false by default.
+    
     v5gdb::install(
         V5Debugger::new(StdioTransport)
             .with_motor_stop(true),
     );
 
-    // spin motors so you can physically watch the motors running
+    // Spin motors so you can watch the motors running
     println!("Spinning motors at +6 V for 2 s...");
     set_all_motors(6_000); // 6 000 mV = 6 V
     sleep(Duration::from_secs(2)).await;
@@ -108,7 +113,7 @@ async fn main(_peripherals: Peripherals) {
     // the gdb console loop runs. 
     // the brain waits here for new gdb commands.
 
-    // after gdbs `c` (continue), execution resumes here.
+    // after gdb's `c` (continue), execution resumes here.
     println!("Resumed.  Motors will spin again and loop...");
 
     let mut iter = 0u32;
