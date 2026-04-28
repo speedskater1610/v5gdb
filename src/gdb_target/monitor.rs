@@ -18,8 +18,8 @@ const HELP_MSG: &str = "
 Monitor commands:
     help                                Show this help message.
     stop                                Immediately stop all motors right now.
-    stop_motors                         Show whether auto-stop on breakpoint is enabled.
-    stop_motors (on | off)              Enable or disable automatic motor stop on breakpoint.
+    autostop ?                          Show whether auto-stop on breakpoint is enabled.
+    autostop (true | false)             Enable or disable automatic motor stop on breakpoint.
     ctrl [partner]                      View controller state, primary (default) or partner.
     comp                                View competition state.
     comp (driver | auton | disabled)    Override competition mode.
@@ -50,14 +50,15 @@ impl MonitorCmd for V5Target {
                 gdbstub::outputln!(out, "All motors stopped.");
             }
 
-            // `monitor stop_motors [on | off]`
+            // `monitor autostop [true | false]`
             //
-            // with no args:      print current setting.
-            // with "on":         enable auto-stop on every breakpoint.
-            // with "off":        disable auto-stop.
-            "stop_motors" => {
+            // with no args:        tells the user what commands they can use.
+            // with "true":         enable auto-stop on every breakpoint.
+            // with "false":        disable auto-stop.
+            // with "?"             prints the state of auto-stop.
+            "autostop" => {
                 match args.next() {
-                    Some("on") => {
+                    Some("true") => {
                         self.stop_motors_on_break = true;
                         gdbstub::outputln!(
                             out,
@@ -65,30 +66,39 @@ impl MonitorCmd for V5Target {
                              All motors will be stopped immediately whenever a breakpoint fires."
                         );
                     }
-                    Some("off") => {
+                    Some("false") => {
                         self.stop_motors_on_break = false;
                         gdbstub::outputln!(
                             out,
                             "Auto motor-stop on breakpoint: DISABLED."
                         );
                     }
-                    Some(unknown) => {
-                        gdbstub::outputln!(
-                            out,
-                            "Unknown argument '{unknown}'. Use 'on' or 'off'.\n\
-                             Example: `monitor stop_motors on`"
-                        );
-                    }
-                    None => {
-                        let state = if self.stop_motors_on_break {
+                    Some("?") => {
+                        let stop_state = if self.stop_motors_on_break {
                             "ENABLED"
                         } else {
                             "DISABLED"
                         };
+
                         gdbstub::outputln!(
                             out,
                             "auto motor-stop on breakpoint: {state}.\n\
-                             Use `monitor stop_motors on` or `monitor stop_motors off` to change."
+                             Use `monitor autostop true` or `monitor autostop false` to change the state."
+                        );
+                    }
+                    Some(unknown) => {
+                        gdbstub::outputln!(
+                            out,
+                            "Unknown argument '{unknown}'. Use 'true' or 'false' or '?'.\n\
+                             Example: `monitor autostop true`"
+                        );
+                    }
+                    None => {
+                        gdbstub::outputln!(
+                            out,
+                            "Please include valid arguments this includes: \n\
+                             `autostop ?`                Show whether auto-stop on breakpoint is enabled.\n\
+                             `autostop (true | false)`   Enable or disable automatic motor stop on breakpoint."
                         );
                     }
                 }

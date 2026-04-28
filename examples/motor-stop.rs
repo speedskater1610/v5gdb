@@ -31,9 +31,9 @@
 //!
 //!   ```sh
 //!   (gdb) monitor help              # list all monitor commands
-//!   (gdb) monitor stop_motors       # check current auto-stop setting
-//!   (gdb) monitor stop_motors on    # enable (already on in this example but off by default)
-//!   (gdb) monitor stop_motors off   # disable to test motors keep running
+//!   (gdb) monitor autostop ?        # check current auto-stop setting
+//!   (gdb) monitor autostop true     # enable (already on in this example but off by default)
+//!   (gdb) monitor autostop false    # disable to test motors keep running
 //!   (gdb) monitor stop              # manually stop motors right now
 //!   (gdb) c                         # continue (motors spin again)
 //!   (gdb) break motor_stop_loop     # set a named-function breakpoint
@@ -66,7 +66,7 @@ fn set_all_motors(voltage_mv: i32) {
 }
 
 
-// named function so gdbs `break motor_stop_loop` works
+// named function so gdbs `break motor_stop_loop` command works
 #[inline(never)]
 fn motor_stop_loop(iteration: u32) -> u32 {
     iteration.wrapping_add(1)
@@ -88,10 +88,10 @@ async fn main(_peripherals: Peripherals) {
     // You can also enable it at runtime from GDB with:
     //
     // ```sh
-    // (gdb) monitor stop_motors on
+    // (gdb) monitor autostop true
     // ```
     //
-    // If you dont want this feature to be active, not using 
+    // If you do not want this feature to be active, not using 
     // this builder method, will set it to false by default.
     
     v5gdb::install(
