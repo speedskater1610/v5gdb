@@ -12,9 +12,8 @@ use vex_sdk::{V5_MAX_DEVICE_PORTS, vexDeviceGetByIndex, vexDeviceMotorVoltageSet
 ///
 /// ports that have no device connected are silently skipped. The loop does
 /// not short circuit on a null device handle so that non contiguous motor
-/// configurations (e.g. motors on ports 1 and 5 with nothing on 2–4) can end up
+/// configurations (e.g. motors on ports 1 and 5 with no motors on ports 2-4) can end up
 /// being handled correctly.
-
 #[cfg(target_arch = "arm")]
 pub fn stop_all_motors() {
     for port_num in 0..V5_MAX_DEVICE_PORTS {
