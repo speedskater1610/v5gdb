@@ -74,7 +74,7 @@ pub struct V5Target {
     /// this should prevents the robot from moving while the debugger has paused
     /// execution. It can be toggled at runtime with the gdb monitor commands
     ///
-    /// `monitor stop_motors on` / `monitor stop_motors off`, 
+    /// `monitor stop_motors on` / `monitor stop_motors off`,
     /// or config'ed at startup via
     /// [`crate::debugger::V5Debugger::with_motor_stop`].
     ///

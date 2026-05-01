@@ -2,7 +2,7 @@
 //!
 //! # What this demos
 //!
-//! This example shows the `with_motor_stop(true)` feature. 
+//! This example shows the `with_motor_stop(true)` feature.
 //! It:
 //!
 //! 1. Spin any motors that are plugged into the bot at +6 V (6000 mV)
@@ -57,7 +57,7 @@ fn set_all_motors(voltage_mv: i32) {
         unsafe {
             let dev = vexDeviceGetByIndex(port as u32);
             if dev.is_null() {
-                continue; 
+                continue;
             }
 
             vexDeviceMotorVoltageSet(dev, voltage_mv);
@@ -65,13 +65,11 @@ fn set_all_motors(voltage_mv: i32) {
     }
 }
 
-
 // named function so gdbs `break motor_stop_loop` command works
 #[inline(never)]
 fn motor_stop_loop(iteration: u32) -> u32 {
     iteration.wrapping_add(1)
 }
-
 
 #[vexide::main(banner(enabled = false))]
 async fn main(_peripherals: Peripherals) {
@@ -91,13 +89,10 @@ async fn main(_peripherals: Peripherals) {
     // (gdb) monitor autostop true
     // ```
     //
-    // If you do not want this feature to be active, not using 
+    // If you do not want this feature to be active, not using
     // this builder method, will set it to false by default.
-    
-    v5gdb::install(
-        V5Debugger::new(StdioTransport)
-            .with_motor_stop(true),
-    );
+
+    v5gdb::install(V5Debugger::new(StdioTransport).with_motor_stop(true));
 
     // Spin motors so you can watch the motors running
     println!("Spinning motors at +6 V for 2 s...");
@@ -110,7 +105,7 @@ async fn main(_peripherals: Peripherals) {
     v5gdb::breakpoint!();
     // At this point the debugger fires, `stop_all_motors()` is called inside
     // `handle_debug_event()` because `stop_motors_on_break` is equal to `true`, and then
-    // the gdb console loop runs. 
+    // the gdb console loop runs.
     // the brain waits here for new gdb commands.
 
     // after gdb's `c` (continue), execution resumes here.
