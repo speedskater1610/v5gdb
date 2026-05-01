@@ -22,7 +22,7 @@ use crate::{
     debugger::sdk::InternalBreakpoint,
     exceptions::DebugEventContext,
     gdb_target::{V5Target, breakpoint::hardware::Specificity},
-    motors::stop_all_motors,
+    sdk::stop_all_motors,
     sys::{DebuggerSystem, System},
     transport::TransportError,
 };
@@ -44,30 +44,51 @@ impl From<GdbStubError<Infallible, TransportError>> for DebuggerError {
     }
 }
 
+/// Initial configuration for [`V5Debugger`].
+///
+/// Stores the debugger's default settings. These values are applied once during
+/// [`Debugger::initialize`] and have no effect if modified afterwards. Use GDB monitor commands
+/// to change settings at runtime once the debugger is running.
+#[derive(Debug, Default, Clone)]
+pub struct DebuggerConfig {
+    /// Whether all motors should be stopped by default when a breakpoint fires.
+    ///
+    /// When `true`, [`sdk::stop_all_motors`] is called immediately on every breakpoint, before
+    /// the GDB console loop begins. This prevents the robot from driving away or actuating
+    /// mechanisms while execution is paused.
+    ///
+    /// This is the *initial* value of [`V5Target::stop_motors_on_break`]. It can be overridden
+    /// at runtime from GDB with `monitor autostop true` / `monitor autostop false` without
+    /// restarting the program.
+    ///
+    /// Defaults to `false`.
+    pub stop_motors_on_break: bool,
+}
+
 /// Debugger manager.
 pub struct V5Debugger<S>
 where
     S: Connection<Error = TransportError> + ConnectionExt,
 {
     state: Mutex<DebuggerState<'static, S>>,
-    /// Whether to automatically stop all motors when a breakpoint fires.
+    /// Initial settings applied to the debugger on [`Debugger::initialize`].
     ///
-    /// This is set via [`V5Debugger::with_motor_stop`] at construction time and
-    /// propagated into [`V5Target::stop_motors_on_break`] during
-    /// [`Debugger::initialize`]. It can subsequently be changed at runtime
-    /// through the `monitor stop_motors on/off` GDB command.
-    stop_motors_on_break: bool,
+    /// After initialisation, the live values in [`V5Target`] are the source of truth and this
+    /// field is no longer read. Mutating it after calling [`install`](crate::install) has no
+    /// effect.
+    config: DebuggerConfig,
 }
 
 impl<S> V5Debugger<S>
 where
     S: Connection<Error = TransportError> + ConnectionExt,
 {
-    /// Creates a new debugger.
+    /// creates a new debugger with default config.
     ///
-    /// Auto motor-stop on breakpoint is **disabled** by default. Enable it with
-    /// [`with_motor_stop`](Self::with_motor_stop), or toggle it at runtime from
-    /// GDB using `monitor stop_motors on`.
+    /// By default, motors are **not** stopped on breakpoints. Pass a [`DebuggerConfig`] via
+    /// [`with_config`](Self::with_config), or use the convenience builder
+    /// [`with_motor_stop`](Self::with_motor_stop). Settings can also be changed at runtime from
+    /// GDB using monitor commands.
     #[must_use]
     pub fn new(stream: S) -> Self {
         const GDB_PACKET_BUFFER_SIZE: usize = 4096;
@@ -99,42 +120,44 @@ where
                 target,
                 internal_breaks: None,
             }),
-            stop_motors_on_break: false,
+            config: DebuggerConfig::default(),
         }
     }
 
-    /// config wether all motors should be auto stopped when ever a
-    /// breakpoint is triggered.
+    /// applies a [`DebuggerConfig`] to this debugger.
     ///
-    /// when enabled, it calls `vexDeviceMotorVoltageSet(device, 0)` for
-    /// every smart port on the brain when a breakpoint fires; 
-    /// before the gdb console loop even starts.  
-    /// this means the robot stays put and stops, any motion
-    /// when you inspect state.
+    /// replaces any previously set configuration. Has no effect if called after
+    /// [`install`](crate::install).
+    #[must_use]
+    pub fn with_config(mut self, config: DebuggerConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// sets whether all motors should be automatically stopped whenever a breakpoint fires.
     ///
-    /// The setting can also be toggled live from gdb at any time through :
+    /// this sets [`DebuggerConfig::stop_motors_on_break`] and controls the *default* value of
+    /// `V5Target::stop_motors_on_break`. it is applied once at initialisation and has no effect
+    /// if changed after [`install`](crate::install) is called
     ///
-    /// ```
-    /// (gdb) monitor stop_motors on
-    /// (gdb) monitor stop_motors off
-    /// (gdb) monitor stop_motors
-    /// ```
+    /// use `monitor autostop true` / `monitor autostop false` from GDB to toggle the setting
+    /// at runtime without restarting the program
     ///
     /// Defaults to `false`.
     ///
-    /// # Example :
+    /// # Example
     ///
     /// ```rust,no_run
     /// use v5gdb::{debugger::V5Debugger, transport::StdioTransport};
     ///
     /// v5gdb::install(
     ///     V5Debugger::new(StdioTransport)
-    ///         .with_motor_stop(true)
+    ///         .with_motor_stop(true),
     /// );
     /// ```
     #[must_use]
     pub fn with_motor_stop(mut self, enabled: bool) -> Self {
-        self.stop_motors_on_break = enabled;
+        self.config.stop_motors_on_break = enabled;
         self
     }
 
@@ -155,13 +178,11 @@ where
         System::initialize(&mut state.target);
         crate::sdk::competition::install_override();
 
-        // copy the compile time default into the target state
-        // after this point the gdb,
-        //      `monitor stop_motors`,
-        // command is the way to change the flag
-        state.target.stop_motors_on_break = self.stop_motors_on_break;
+        // apply the initial config into the live target state. from this point on, the values in
+        // V5Target are the source of truth so `self.config` is never read again.
+        state.target.stop_motors_on_break = self.config.stop_motors_on_break;
 
-        log::debug!("Debugger initialized (stop_motors_on_break={})", self.stop_motors_on_break);
+        log::debug!("Debugger initialized (config={:?})", self.config);
     }
 
     unsafe fn handle_debug_event(&self, ctx: &mut DebugEventContext) -> bool {
@@ -188,20 +209,13 @@ where
             log::error!("Your program has been paused. Please connect a debugger.")
         });
 
-        // auto motor stop on breakpoint
+        // Auto motor-stop on breakpoint.
         //
-        // stop all motors before entering the gdb console loop
-        // This prevents the bot from driving away (or any motor movement, 
-        // but most usefull for drivetrain) while execution is paused.
-        //
-        // check the flag from `target.stop_motors_on_break` (not
-        // `self.stop_motors_on_break`) 
-        // 
-        // so that live changes via
-        // `monitor stop_motors on / off` take effect immediately on the next
+        // We read from `target.stop_motors_on_break` (not `self.config.stop_motors_on_break`)
+        // so that live changes via `monitor autostop true/false` take effect on the next
         // breakpoint without restarting the program.
         if state.target.stop_motors_on_break {
-            log::debug!("auto motor-stop triggered by breakpoint");
+            log::debug!("Auto motor-stop triggered by breakpoint");
             stop_all_motors();
         }
 

@@ -7,8 +7,7 @@ use vex_sdk::*;
 
 use crate::{
     gdb_target::V5Target,
-    motors::stop_all_motors,
-    sdk::competition,
+    sdk::{competition, stop_all_motors},
     sys::{DebuggerSystem, System},
 };
 
@@ -75,7 +74,7 @@ impl MonitorCmd for V5Target {
                         );
                     }
                     Some("?") => {
-                        let stop_state = if self.stop_motors_on_break {
+                        let state = if self.stop_motors_on_break {
                             "ENABLED"
                         } else {
                             "DISABLED"
@@ -83,7 +82,7 @@ impl MonitorCmd for V5Target {
 
                         gdbstub::outputln!(
                             out,
-                            "auto motor-stop on breakpoint: {state}.\n\
+                            "Auto motor-stop on breakpoint: {state}.\n\
                              Use `monitor autostop true` or `monitor autostop false` to change the state."
                         );
                     }
