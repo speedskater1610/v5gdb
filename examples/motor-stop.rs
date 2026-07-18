@@ -43,7 +43,7 @@
 
 use std::time::Duration;
 
-use v5gdb::{debugger::V5Debugger, transport::StdioTransport};
+use v5gdb::{debugger::V5Debugger, debugger::DebuggerConfig, transport::StdioTransport};
 use vex_sdk::{V5_MAX_DEVICE_PORTS, vexDeviceGetByIndex, vexDeviceMotorVoltageSet};
 use vexide::prelude::*;
 

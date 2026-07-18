@@ -49,6 +49,7 @@ impl From<GdbStubError<Infallible, TransportError>> for DebuggerError {
 /// Stores the debugger's default settings. These values are applied once during
 /// [`Debugger::initialize`] and have no effect if modified afterwards. All settings can be
 /// overridden at runtime from GDB using monitor commands, without restarting the program.
+#[derive(Debug, Default, Clone)]
 pub struct DebuggerConfig {
     /// Whether all motors should be stopped immediately when a breakpoint fires.
     ///
