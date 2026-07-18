@@ -140,10 +140,7 @@ where
     /// ```rust,no_run
     /// use v5gdb::{debugger::V5Debugger, transport::StdioTransport};
     ///
-    /// v5gdb::install(
-    ///     V5Debugger::new(StdioTransport)
-    ///         .with_motor_stop(true),
-    /// );
+    /// v5gdb::install(V5Debugger::new(StdioTransport).with_motor_stop(true));
     /// ```
     #[must_use]
     pub fn with_motor_stop(mut self, enabled: bool) -> Self {

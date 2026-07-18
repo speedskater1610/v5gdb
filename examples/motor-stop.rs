@@ -2,7 +2,7 @@
 //!
 //! # What this demos
 //!
-//! This example shows the `with_motor_stop(true)` feature. 
+//! This example shows the `with_motor_stop(true)` feature.
 //! It:
 //!
 //! 1. Spin any motors that are plugged into the bot at +6 V (6000 mV)
@@ -43,7 +43,10 @@
 
 use std::time::Duration;
 
-use v5gdb::{debugger::V5Debugger, debugger::DebuggerConfig, transport::StdioTransport};
+use v5gdb::{
+    debugger::{DebuggerConfig, V5Debugger},
+    transport::StdioTransport,
+};
 use vex_sdk::{V5_MAX_DEVICE_PORTS, vexDeviceGetByIndex, vexDeviceMotorVoltageSet};
 use vexide::prelude::*;
 
@@ -57,7 +60,7 @@ fn set_all_motors(voltage_mv: i32) {
         unsafe {
             let dev = vexDeviceGetByIndex(port as u32);
             if dev.is_null() {
-                continue; 
+                continue;
             }
 
             vexDeviceMotorVoltageSet(dev, voltage_mv);
@@ -65,13 +68,11 @@ fn set_all_motors(voltage_mv: i32) {
     }
 }
 
-
 // named function so gdbs `break motor_stop_loop` command works
 #[inline(never)]
 fn motor_stop_loop(iteration: u32) -> u32 {
     iteration.wrapping_add(1)
 }
-
 
 #[vexide::main(banner(enabled = false))]
 async fn main(_peripherals: Peripherals) {
@@ -88,17 +89,15 @@ async fn main(_peripherals: Peripherals) {
     // You can also enable or disable this at runtime from GDB with:
     //
     // (gdb) monitor autostop true
-    //  
+    //
     // or
     //
     // (gdb) monitor autostop false
 
-    v5gdb::install(
-        V5Debugger::new(StdioTransport).with_config(DebuggerConfig {
-            stop_motors_on_break: true,
-            ..Default::default()
-        }),
-    );
+    v5gdb::install(V5Debugger::new(StdioTransport).with_config(DebuggerConfig {
+        stop_motors_on_break: true,
+        ..Default::default()
+    }));
 
     // Spin motors so you can watch the motors running
     println!("Spinning motors at +6 V for 2 s...");
@@ -111,7 +110,7 @@ async fn main(_peripherals: Peripherals) {
     v5gdb::breakpoint!();
     // At this point the debugger fires, `stop_all_motors()` is called inside
     // `handle_debug_event()` because `stop_motors_on_break` is equal to `true`, and then
-    // the gdb console loop runs. 
+    // the gdb console loop runs.
     // the brain waits here for new gdb commands.
 
     // after gdb's `c` (continue), execution resumes here.

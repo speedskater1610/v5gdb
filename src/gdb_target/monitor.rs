@@ -54,53 +54,48 @@ impl MonitorCmd for V5Target {
             // with "true":         enable auto-stop on every breakpoint.
             // with "false":        disable auto-stop.
             // with "?"             prints the state of auto-stop.
-            "autostop" => {
-                match args.next() {
-                    Some("true") => {
-                        self.stop_motors_on_break = true;
-                        gdbstub::outputln!(
-                            out,
-                            "auto motor-stop on breakpoint: ENABLED.\n\
+            "autostop" => match args.next() {
+                Some("true") => {
+                    self.stop_motors_on_break = true;
+                    gdbstub::outputln!(
+                        out,
+                        "auto motor-stop on breakpoint: ENABLED.\n\
                              All motors will be stopped immediately whenever a breakpoint fires."
-                        );
-                    }
-                    Some("false") => {
-                        self.stop_motors_on_break = false;
-                        gdbstub::outputln!(
-                            out,
-                            "Auto motor-stop on breakpoint: DISABLED."
-                        );
-                    }
-                    Some("?") => {
-                        let state = if self.stop_motors_on_break {
-                            "ENABLED"
-                        } else {
-                            "DISABLED"
-                        };
+                    );
+                }
+                Some("false") => {
+                    self.stop_motors_on_break = false;
+                    gdbstub::outputln!(out, "Auto motor-stop on breakpoint: DISABLED.");
+                }
+                Some("?") => {
+                    let state = if self.stop_motors_on_break {
+                        "ENABLED"
+                    } else {
+                        "DISABLED"
+                    };
 
-                        gdbstub::outputln!(
-                            out,
-                            "Auto motor-stop on breakpoint: {state}.\n\
+                    gdbstub::outputln!(
+                        out,
+                        "Auto motor-stop on breakpoint: {state}.\n\
                              Use `monitor autostop true` or `monitor autostop false` to change the state."
-                        );
-                    }
-                    Some(unknown) => {
-                        gdbstub::outputln!(
-                            out,
-                            "Unknown argument '{unknown}'. Use 'true' or 'false' or '?'.\n\
+                    );
+                }
+                Some(unknown) => {
+                    gdbstub::outputln!(
+                        out,
+                        "Unknown argument '{unknown}'. Use 'true' or 'false' or '?'.\n\
                              Example: `monitor autostop true`"
-                        );
-                    }
-                    None => {
-                        gdbstub::outputln!(
-                            out,
-                            "Please include valid arguments this includes: \n\
+                    );
+                }
+                None => {
+                    gdbstub::outputln!(
+                        out,
+                        "Please include valid arguments this includes: \n\
                              `autostop ?`                Show whether auto-stop on breakpoint is enabled.\n\
                              `autostop (true | false)`   Enable or disable automatic motor stop on breakpoint."
-                        );
-                    }
+                    );
                 }
-            }
+            },
 
             "ctrl" => gdbstub::outputln!(out, "Unimplemented"), // TODO
             "comp" => {
