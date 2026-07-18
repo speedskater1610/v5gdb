@@ -49,9 +49,9 @@ use vexide::prelude::*;
 
 /// Set all detected motors to `voltage_mv` millivolts.
 ///
-/// This mirrors the loop in `motors::stop_all_motors`
-/// non-motor devices on a port should silently ignore this call
-/// (the sdk should no-ops if the device type does not match).
+/// This mirrors the loop in `sdk::stop_all_motors`
+/// Non-motor devices on a port should silently ignore this call.
+/// (the SDK should no-op if the device type does not match).
 fn set_all_motors(voltage_mv: i32) {
     for port in 0..V5_MAX_DEVICE_PORTS {
         unsafe {
@@ -84,19 +84,20 @@ async fn main(_peripherals: Peripherals) {
 
     // Installs the debugger with auto-motor stop enabled.
     //
-    // `with_motor_stop(true)` is the new builder method.
-    // You can also enable it at runtime from GDB with:
+    // `DebuggerConfig` contains the debugger's initial configuration.
+    // You can also enable or disable this at runtime from GDB with:
     //
-    // ```sh
     // (gdb) monitor autostop true
-    // ```
+    //  
+    // or
     //
-    // If you do not want this feature to be active, not using 
-    // this builder method, will set it to false by default.
-    
+    // (gdb) monitor autostop false
+
     v5gdb::install(
-        V5Debugger::new(StdioTransport)
-            .with_motor_stop(true),
+        V5Debugger::new(StdioTransport).with_config(DebuggerConfig {
+            stop_motors_on_break: true,
+            ..Default::default()
+        }),
     );
 
     // Spin motors so you can watch the motors running

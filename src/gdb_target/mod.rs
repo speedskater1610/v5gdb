@@ -69,16 +69,16 @@ pub struct V5Target {
     /// steps instead of normal breakpoints.
     pub single_step_request: Option<SingleStepRequest>,
 
-    /// when it is `true`, all motors are stopped when a breakpoint is triggered
+    /// When `true`, all motors are stopped when a breakpoint is triggered.
     ///
-    /// this should prevents the robot from moving while the debugger has paused
-    /// execution. It can be toggled at runtime with the gdb monitor commands
+    /// This prevents the robot from moving while the debugger has paused
+    /// execution. It can be toggled at runtime with the GDB monitor commands:
     ///
-    /// `monitor stop_motors on` / `monitor stop_motors off`, 
-    /// or config'ed at startup via
+    /// `monitor autostop true` / `monitor autostop false`,
+    /// or configured at startup via
     /// [`crate::debugger::V5Debugger::with_motor_stop`].
     ///
-    /// defaults to `false`.
+    /// Defaults to `false`.
     pub stop_motors_on_break: bool,
 }
 

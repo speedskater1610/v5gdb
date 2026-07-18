@@ -47,19 +47,13 @@ impl From<GdbStubError<Infallible, TransportError>> for DebuggerError {
 /// Initial configuration for [`V5Debugger`].
 ///
 /// Stores the debugger's default settings. These values are applied once during
-/// [`Debugger::initialize`] and have no effect if modified afterwards. Use GDB monitor commands
-/// to change settings at runtime once the debugger is running.
-#[derive(Debug, Default, Clone)]
+/// [`Debugger::initialize`] and have no effect if modified afterwards. All settings can be
+/// overridden at runtime from GDB using monitor commands, without restarting the program.
 pub struct DebuggerConfig {
-    /// Whether all motors should be stopped by default when a breakpoint fires.
+    /// Whether all motors should be stopped immediately when a breakpoint fires.
     ///
-    /// When `true`, [`sdk::stop_all_motors`] is called immediately on every breakpoint, before
-    /// the GDB console loop begins. This prevents the robot from driving away or actuating
-    /// mechanisms while execution is paused.
-    ///
-    /// This is the *initial* value of [`V5Target::stop_motors_on_break`]. It can be overridden
-    /// at runtime from GDB with `monitor autostop true` / `monitor autostop false` without
-    /// restarting the program.
+    /// This prevents the robot from driving away or actuating mechanisms while execution is
+    /// paused. Can be toggled at runtime with `monitor autostop true` / `monitor autostop false`.
     ///
     /// Defaults to `false`.
     pub stop_motors_on_break: bool,
@@ -83,12 +77,7 @@ impl<S> V5Debugger<S>
 where
     S: Connection<Error = TransportError> + ConnectionExt,
 {
-    /// creates a new debugger with default config.
-    ///
-    /// By default, motors are **not** stopped on breakpoints. Pass a [`DebuggerConfig`] via
-    /// [`with_config`](Self::with_config), or use the convenience builder
-    /// [`with_motor_stop`](Self::with_motor_stop). Settings can also be changed at runtime from
-    /// GDB using monitor commands.
+    /// Creates a new debugger with default config.
     #[must_use]
     pub fn new(stream: S) -> Self {
         const GDB_PACKET_BUFFER_SIZE: usize = 4096;
@@ -124,9 +113,9 @@ where
         }
     }
 
-    /// applies a [`DebuggerConfig`] to this debugger.
+    /// Applies a [`DebuggerConfig`] to this debugger.
     ///
-    /// replaces any previously set configuration. Has no effect if called after
+    /// Replaces any previously set configuration. Has no effect if called after
     /// [`install`](crate::install).
     #[must_use]
     pub fn with_config(mut self, config: DebuggerConfig) -> Self {
@@ -134,13 +123,13 @@ where
         self
     }
 
-    /// sets whether all motors should be automatically stopped whenever a breakpoint fires.
+    /// Sets whether all motors should be automatically stopped whenever a breakpoint fires.
     ///
-    /// this sets [`DebuggerConfig::stop_motors_on_break`] and controls the *default* value of
-    /// `V5Target::stop_motors_on_break`. it is applied once at initialisation and has no effect
-    /// if changed after [`install`](crate::install) is called
+    /// This sets [`DebuggerConfig::stop_motors_on_break`] and controls the *default* value of
+    /// `V5Target::stop_motors_on_break`. It is applied once at initialisation and has no effect
+    /// if changed after [`install`](crate::install) is called.
     ///
-    /// use `monitor autostop true` / `monitor autostop false` from GDB to toggle the setting
+    /// Use `monitor autostop true` / `monitor autostop false` from GDB to toggle the setting
     /// at runtime without restarting the program
     ///
     /// Defaults to `false`.

@@ -65,17 +65,11 @@ macro_rules! jumptable {
 }
 pub(crate) use jumptable;
 
-/// immediately stops every motor connected to the brain by setting its voltage to 0 mV.
+/// Immediately stops every motor connected to the brain by setting its voltage to 0 mV.
 ///
 /// Ports that have no device connected are silently skipped. The loop does **not** short circuit
 /// on a null device handle, so noncontiguous motor configurations (e.g. motors on ports 1 and 5
 /// with nothing on 2-4) are handled correctly.
-///
-/// # Safety
-///
-/// Must be called from a context where the VEX SDK is initialised and the jump-table is valid
-/// (i.e. inside user-program execution on the V5 brain). This is always the case when called from
-/// a breakpoint handler.
 pub fn stop_all_motors() {
     use vex_sdk::{V5_MAX_DEVICE_PORTS, vexDeviceGetByIndex, vexDeviceMotorVoltageSet};
     for port_num in 0..V5_MAX_DEVICE_PORTS {

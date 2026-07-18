@@ -38,18 +38,18 @@ pub mod debugger {
 
     /// Init configuration for the debugger.
     ///
-    /// these values control the debuggers default behaviour and are applied once during
-    /// [`Debugger::initialize`]. settings can be overridden at runtime through GDB monitor
+    /// These values control the debugger's default behaviour and are applied once during
+    /// [`Debugger::initialize`]. Settings can be overridden at runtime through GDB monitor
     /// commands after the debugger starts
     #[derive(Debug, Default, Clone)]
     pub struct DebuggerConfig {
-        /// whether motors should be stopped by default when a breakpoint fires.
+        /// Whether motors should be stopped by default when a breakpoint fires.
         ///
-        /// when `true`, [`sdk::stop_all_motors`] is called immediately on every breakpoint before
-        /// the gdb console loop begins. This can be overridden at runtime with
+        /// When `true`, [`sdk::stop_all_motors`] is called immediately on every breakpoint before
+        /// the GDB console loop begins. This can be overridden at runtime with
         /// `monitor autostop true` / `monitor autostop false`.
         ///
-        /// defaults to `false`.
+        /// Defaults to `false`.
         pub stop_motors_on_break: bool,
     }
 
