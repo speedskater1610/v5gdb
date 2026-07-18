@@ -1,14 +1,11 @@
 use gdbstub::{
     common::Tid,
     target::{
-        TargetError, TargetResult,
+        TargetResult,
         ext::{
             base::{
-                multithread::{
-                    MultiThreadBase, MultiThreadResume, MultiThreadResumeOps,
-                    MultiThreadSingleStep, MultiThreadSingleStepOps,
-                },
-                single_register_access::{SingleRegisterAccess, SingleRegisterAccessOps},
+                multithread::{MultiThreadBase, MultiThreadResumeOps},
+                single_register_access::SingleRegisterAccessOps,
                 singlethread::SingleThreadBase,
             },
             thread_extra_info::{ThreadExtraInfo, ThreadExtraInfoOps},
@@ -17,12 +14,7 @@ use gdbstub::{
 };
 
 use crate::{
-    gdb_target::{
-        V5Target,
-        arch::{ArmRegisterID, ArmRegisters},
-        single_register_access::SavedRegister,
-    },
-    sys::{DebuggerSystem, System},
+    exceptions::DebugEventContext, gdb_target::V5Target, sys::{DebuggerSystem, System}
 };
 
 impl MultiThreadBase for V5Target {
@@ -43,7 +35,7 @@ impl MultiThreadBase for V5Target {
         Some(self)
     }
 
-    fn read_registers(&mut self, regs: &mut ArmRegisters, tid: Tid) -> TargetResult<(), Self> {
+    fn read_registers(&mut self, regs: &mut DebugEventContext, tid: Tid) -> TargetResult<(), Self> {
         if tid == System::current_thread() {
             <Self as SingleThreadBase>::read_registers(self, regs)
         } else {
@@ -52,7 +44,7 @@ impl MultiThreadBase for V5Target {
         }
     }
 
-    fn write_registers(&mut self, regs: &ArmRegisters, tid: Tid) -> TargetResult<(), Self> {
+    fn write_registers(&mut self, regs: &DebugEventContext, tid: Tid) -> TargetResult<(), Self> {
         if tid == System::current_thread() {
             <Self as SingleThreadBase>::write_registers(self, regs)
         } else {
@@ -83,88 +75,6 @@ impl MultiThreadBase for V5Target {
 
     fn support_single_register_access(&mut self) -> Option<SingleRegisterAccessOps<'_, Tid, Self>> {
         Some(self)
-    }
-}
-
-impl MultiThreadResume for V5Target {
-    fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
-        log::info!("Setup resume");
-        // All threads use the "continue" resume action by default.
-        Ok(())
-    }
-
-    fn set_resume_action_continue(
-        &mut self,
-        _tid: Tid,
-        _signal: Option<gdbstub::common::Signal>,
-    ) -> Result<(), Self::Error> {
-        log::debug!("Resume action - continue");
-        // All threads use the "continue" resume action by default.
-        Ok(())
-    }
-
-    fn resume(&mut self) -> Result<(), Self::Error> {
-        log::info!("Commit resume");
-        self.resume = true;
-        Ok(())
-    }
-
-    fn support_single_step(&mut self) -> Option<MultiThreadSingleStepOps<'_, Self>> {
-        Some(self)
-    }
-}
-
-impl MultiThreadSingleStep for V5Target {
-    fn set_resume_action_step(
-        &mut self,
-        tid: Tid,
-        _signal: Option<gdbstub::common::Signal>,
-    ) -> Result<(), Self::Error> {
-        log::info!(
-            "Resume action STEP for tid {tid:?} (current = {})",
-            System::current_thread()
-        );
-        if tid == System::current_thread() {
-            self.setup_step().expect("Couldn't set up single step");
-            Ok(())
-        } else {
-            unimplemented!("Can't single step a different thread");
-        }
-    }
-}
-
-impl SingleRegisterAccess<Tid> for V5Target {
-    fn read_register(
-        &mut self,
-        tid: Tid,
-        reg_id: ArmRegisterID,
-        buf: &mut [u8],
-    ) -> TargetResult<usize, Self> {
-        if tid == System::current_thread() {
-            <Self as SingleRegisterAccess<()>>::read_register(self, (), reg_id, buf)
-        } else {
-            let reg = System::read_single_register(tid, reg_id)?;
-            reg.write_to_buffer(buf);
-            Ok(reg.bytes())
-        }
-    }
-
-    fn write_register(
-        &mut self,
-        tid: Tid,
-        reg_id: ArmRegisterID,
-        val: &[u8],
-    ) -> TargetResult<(), Self> {
-        if tid == System::current_thread() {
-            <Self as SingleRegisterAccess<()>>::write_register(self, (), reg_id, val)
-        } else {
-            let reg = SavedRegister::from_le_bytes(val).ok_or(TargetError::NonFatal)?;
-            // SAFETY: We trust that GDB will not corrupt system state.
-            unsafe {
-                System::write_single_register(tid, reg_id, reg)?;
-            }
-            Ok(())
-        }
     }
 }
 

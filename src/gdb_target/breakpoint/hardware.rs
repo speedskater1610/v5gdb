@@ -313,6 +313,7 @@ impl HwBreakpointManager {
         } else {
             self.mmio.write_lock_access(DEBUG_UNLOCK_MAGIC);
         }
+        debug_assert!(self.locked() == locked);
     }
 
     pub unsafe fn mmio(&self) -> &MmioDebugLogic<'_> {
@@ -320,11 +321,13 @@ impl HwBreakpointManager {
     }
 }
 
+/// Controls a breakpoint or watchpoint's association with its address(es).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Specificity {
     /// The breakpoint/watchpoint is triggered when the specified addresses are accessed.
     Match,
-    /// The breakpoint/watchpoint is triggered when an address is accessed which is not specified.
+    /// The breakpoint/watchpoint is triggered when an address other than the ones specified
+    /// are accessed.
     Mismatch,
 }
 

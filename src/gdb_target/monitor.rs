@@ -10,7 +10,7 @@ use crate::{
 };
 
 const MONITOR_DESCRIPTION: &str =
-    concat!("v5gdb debug server, version ", env!("CARGO_PKG_VERSION"),);
+    concat!("v5gdb debug server, version ", env!("CARGO_PKG_VERSION"));
 
 const HELP_MSG: &str = "
 Monitor commands:
@@ -18,6 +18,8 @@ Monitor commands:
     stop                                Immediately stop all motors right now.
     autostop ?                          Show whether auto-stop on breakpoint is enabled.
     autostop (true | false)             Enable or disable automatic motor stop on breakpoint.
+    dev                                 List connected smart devices.
+    batt                                View battery status.
     ctrl [partner]                      View controller state, primary (default) or partner.
     comp                                View competition state.
     comp (driver | auton | disabled)    Override competition mode.
@@ -97,7 +99,9 @@ impl MonitorCmd for V5Target {
                 }
             },
 
-            "ctrl" => gdbstub::outputln!(out, "Unimplemented"), // TODO
+            "dev" | "devices" => devices(&mut out),
+            "batt" | "battery" => battery(&mut out),
+            "ctrl" => controller(args.next(), &mut out),
             "comp" => {
                 let change = args.next();
                 match change {

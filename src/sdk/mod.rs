@@ -13,45 +13,69 @@ use crate::cpu::cache::{self, CacheTarget};
 
 pub mod competition;
 
-global_asm!(include_str!("./sdk_trampoline.S"), options(raw));
+global_asm!(include_str!("./sdk_trampoline.s"), options(raw));
 unsafe extern "C" {
-    /// A position-independent function that jumps to another (configurable) function.
-    ///
-    /// The function's body spans from the `v5gdb_sdk_trampoline` symbol until
-    /// [`v5gdb_sdk_trampoline_end`]. When the trampoline routine is called, it will branch to the
-    /// function pointer placed immediately after its body.
-    fn v5gdb_sdk_trampoline();
-    static v5gdb_sdk_trampoline_end: u32;
+    /// A position-independent ARM function that jumps to another (configurable) function.
+    fn v5gdb_sdk_trampoline_arm();
+    /// Marks the end of the code for [`v5gdb_sdk_trampoline_arm`].
+    static v5gdb_sdk_trampoline_arm_end: u32;
+    /// A position-independent Thumb function that jumps to another (configurable) function.
+    fn v5gdb_sdk_trampoline_thumb();
+    /// Marks the end of the code for [`v5gdb_sdk_trampoline_thumb`].
+    static v5gdb_sdk_trampoline_thumb_end: u32;
 }
 
 /// Overwrite the target function to branch to the given proxy when called instead of performing
 /// its original functionality.
 ///
+/// The target function's instruction set is detected via its Thumb bit and a matching trampoline is
+/// installed.
+///
 /// # Safety
 ///
-/// The target function must be at least 3 words long and valid to write to. The destination
-/// function must be valid to call in all the same situations as the target function and also have
-/// the same signature as it.
-pub unsafe fn redirect_function(target: *mut u32, destination: *const u32) {
-    let trampoline_ptr = v5gdb_sdk_trampoline as *const u32;
-    let trampoline_len =
-        unsafe { (&raw const v5gdb_sdk_trampoline_end).offset_from_unsigned(trampoline_ptr) };
-    let destination_ptr = unsafe { target.add(trampoline_len).cast() };
+/// The target function must be at least 3 words long, properly aligned for its instruction set, and
+/// valid to write to. The destination function must be valid to call in all the same situations as
+/// the target function and also have the same signature as it.
+pub unsafe fn redirect_function(target: *mut (), destination: *const ()) {
+    const THUMB_BIT: usize = 0b1;
+    let is_thumb = (target as usize) & THUMB_BIT != 0;
+
+    let (trampoline_fn, trampoline_end) = if is_thumb {
+        (
+            v5gdb_sdk_trampoline_thumb as unsafe extern "C" fn(),
+            &raw const v5gdb_sdk_trampoline_thumb_end,
+        )
+    } else {
+        (
+            v5gdb_sdk_trampoline_arm as unsafe extern "C" fn(),
+            &raw const v5gdb_sdk_trampoline_arm_end,
+        )
+    };
+
+    // We cast to u16 since the target function may be a 2-byte aligned Thumb function.
+    let trampoline_src = ((trampoline_fn as usize) & !THUMB_BIT) as *const u16;
+    let write_addr = ((target as usize) & !THUMB_BIT) as *mut u16;
+
+    let code_len_bytes = (trampoline_end as usize) - (trampoline_src as usize);
+    let code_len = code_len_bytes / size_of::<u16>();
+    let destination_slot = unsafe { write_addr.add(code_len) };
 
     unsafe {
-        ptr::copy_nonoverlapping(trampoline_ptr, target, trampoline_len);
-        ptr::write(destination_ptr, destination);
+        ptr::copy_nonoverlapping(trampoline_src, write_addr, code_len);
+        // Keep the destination's Thumb bit intact so the trampoline's `bx` enters it in the
+        // correct instruction set.
+        ptr::write_unaligned(destination_slot.cast::<u32>(), destination as u32);
     }
 
     dsb();
     isb();
 
     // Sync both start and end, in case the function crosses a cache line.
-    cache::sync_instruction(CacheTarget::Address(target as u32));
-    cache::sync_instruction(CacheTarget::Address(destination_ptr as u32));
+    cache::sync_instruction(CacheTarget::Address(write_addr as u32));
+    cache::sync_instruction(CacheTarget::Address(destination_slot as u32));
 }
 
-/// Directly access VEX SDK functions over the jump table without their wrappers.
+/// Directly access VEX SDK functions over the jumptable without their wrappers.
 ///
 /// This is effectively a partial re-implementation of the `vex-sdk-jumptable` crate, which we can't
 /// use here because those might be the functions we are redirecting. If we were to call those
@@ -84,6 +108,122 @@ pub fn stop_all_motors() {
             // setting voltage to 0mV immediately cuts power to the motor
             // this works for both 11W and 5.5W smart-motors
             vexDeviceMotorVoltageSet(device, 0);
+        }
+    }
+}
+/// System serial I/O.
+///
+/// See the `vex-sdk-jumptable` crate for docs on jumptable functions.
+pub mod serial {
+    use core::cmp;
+
+    use derive_more::From;
+
+    /// The size of the serial output ringbuffer.
+    pub const OUT_BUF_SIZE: usize = 2048;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, From)]
+    #[repr(transparent)]
+    pub struct Channel(pub u32);
+
+    impl Channel {
+        pub const USER: Self = Self(1);
+    }
+
+    /// Writes a byte to the given channel.
+    ///
+    /// Returns whether the byte was written.
+    pub fn write_byte(channel: Channel, byte: u8) -> bool {
+        let sys_write_char = unsafe { jumptable!(0x898, extern "C" fn(u32, u8) -> i32) };
+        sys_write_char(channel.0, byte) != 0
+    }
+
+    /// Writes some bytes from a buffer to the given channel.
+    ///
+    /// Returns how many bytes were written.
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be valid for reads and be of the specified length.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the channel is invalid.
+    pub unsafe fn write_buf(channel: Channel, buf: *const u8, len: usize) -> Result<usize, ()> {
+        let sys_write_buf =
+            unsafe { jumptable!(0x89c, unsafe extern "C" fn(u32, *const u8, u32) -> i32) };
+
+        let written = unsafe { sys_write_buf(channel.0, buf, len as u32) };
+        if written == -1 {
+            Err(())
+        } else {
+            Ok(written as usize)
+        }
+    }
+
+    /// Writes some bytes from the given slice to the specified channel.
+    ///
+    /// Returns how many bytes were written.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the channel is invalid.
+    pub fn write(channel: Channel, slice: &[u8]) -> Result<usize, ()> {
+        unsafe { write_buf(channel, slice.as_ptr(), slice.len()) }
+    }
+
+    /// Writes the entire buffer to the specified channel.
+    ///
+    /// This function will block until all bytes were written.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the channel is invalid.
+    pub fn write_all(channel: Channel, mut slice: &[u8]) -> Result<(), ()> {
+        loop {
+            let written = write(channel, slice)?;
+            slice = &slice[cmp::min(written, slice.len())..];
+
+            if slice.is_empty() {
+                break;
+            }
+
+            unsafe {
+                vex_sdk::vexTasksRun();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Reads a single byte from the specified channel.
+    ///
+    /// Returns `None` if there was no byte to read.
+    pub fn read_byte(channel: Channel) -> Option<u8> {
+        let sys_read = unsafe { jumptable!(0x8a0, extern "C" fn(u32) -> i32) };
+        match sys_read(channel.0) {
+            -1 => None,
+            byte => Some(byte as u8),
+        }
+    }
+
+    /// Reads a single byte from the specified channel without popping it from the read queue.
+    ///
+    /// Returns `None` if there was no byte to read.
+    pub fn peek_byte(channel: Channel) -> Option<u8> {
+        let sys_peek = unsafe { jumptable!(0x8a4, extern "C" fn(u32) -> i32) };
+        match sys_peek(channel.0) {
+            -1 => None,
+            byte => Some(byte as u8),
+        }
+    }
+
+    /// Gets the number of unused bytes in the serial output ringbuffer.
+    pub fn write_buf_capacity(channel: Channel) -> Option<usize> {
+        let sys_write_free = unsafe { jumptable!(0x8ac, extern "C" fn(u32) -> i32) };
+        match sys_write_free(channel.0) {
+            -1 => None,
+            len => Some(len as usize),
         }
     }
 }

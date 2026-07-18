@@ -5,20 +5,42 @@
 use core::{
     arch::global_asm,
     ffi::{CStr, c_char, c_void},
-    ptr,
 };
 
 use gdbstub::conn::{Connection, ConnectionExt};
 use spin::Once;
 use v5gdb::{
     debugger::V5Debugger,
-    transport::{StdioTransport, TransportError},
+    transport::{StdioTransport, Transport, TransportError},
 };
 
 mod log;
 mod panic;
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub enum ReadResult {
+    /// The specified byte has been read.
+    Ok(u8),
+    /// The transport stream encountered an error.
+    Err(*const c_char),
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub enum PeekResult {
+    /// The specified byte has been read.
+    Ok(u8),
+    /// There are no more bytes ready to read.
+    Empty,
+    /// The transport stream encountered an error.
+    Err(*const c_char),
+}
+
 /// A custom transport method for communicating with GDB.
+///
+/// The contained type must be valid to transfer across a thread boundary. For example, accesses to
+/// values used outside of the debugger must be atomic.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct TransportImpl {
@@ -38,31 +60,16 @@ pub struct TransportImpl {
     /// successful.
     pub flush: unsafe extern "C" fn(data: *mut c_void) -> *const c_char,
     /// Peeks the next byte received from GDB.
-    ///
-    /// Returns -1 if there are no bytes to read, or returns the unsigned byte.
-    /// Sets *error to a static error string if an error occurred.
-    pub peek_byte: unsafe extern "C" fn(data: *mut c_void, error: *mut *const c_char) -> i32,
+    pub peek_byte: unsafe extern "C" fn(data: *mut c_void) -> PeekResult,
     /// Reads the next byte received from GDB.
-    ///
-    /// Sets *error to a static error string if an error occurred.
-    pub read_byte: unsafe extern "C" fn(data: *mut c_void, error: *mut *const c_char) -> u8,
-}
-
-impl TransportImpl {
-    unsafe fn wrap_err(maybe_error: *const c_char) -> Result<(), TransportError> {
-        if maybe_error.is_null() {
-            Ok(())
-        } else {
-            let error = unsafe { CStr::from_ptr(maybe_error) };
-            Err(TransportError(
-                error.to_str().unwrap_or("<error with invalid utf8>"),
-            ))
-        }
-    }
+    pub read_byte: unsafe extern "C" fn(data: *mut c_void) -> ReadResult,
 }
 
 unsafe impl Send for TransportImpl {}
-unsafe impl Sync for TransportImpl {}
+
+// SAFETY: the FFI consumer is responsible for ensuring peek_byte/read_byte are
+// safe to call from an interrupt context.
+unsafe impl Transport for TransportImpl {}
 
 impl Connection for TransportImpl {
     type Error = TransportError;
@@ -74,14 +81,22 @@ impl Connection for TransportImpl {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
         unsafe {
             let error = (self.write_buf)(self.data, buf.as_ptr(), buf.len());
-            Self::wrap_err(error)
+            if error.is_null() {
+                Ok(())
+            } else {
+                Err(wrap_err(error))
+            }
         }
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
         unsafe {
             let error = (self.flush)(self.data);
-            Self::wrap_err(error)
+            if error.is_null() {
+                Ok(())
+            } else {
+                Err(wrap_err(error))
+            }
         }
     }
 
@@ -95,29 +110,28 @@ impl Connection for TransportImpl {
 
 impl ConnectionExt for TransportImpl {
     fn peek(&mut self) -> Result<Option<u8>, Self::Error> {
-        let mut error = ptr::null();
-        let byte = unsafe { (self.peek_byte)(self.data, &raw mut error) };
+        let result = unsafe { (self.peek_byte)(self.data) };
 
-        unsafe {
-            Self::wrap_err(error)?;
-        }
-
-        if byte > 0 {
-            Ok(Some(byte as u8))
-        } else {
-            Ok(None)
+        match result {
+            PeekResult::Ok(byte) => Ok(Some(byte)),
+            PeekResult::Empty => Ok(None),
+            PeekResult::Err(error) => Err(unsafe { wrap_err(error) }),
         }
     }
 
     fn read(&mut self) -> Result<u8, Self::Error> {
-        let mut error = ptr::null();
-        let byte = unsafe { (self.read_byte)(self.data, &raw mut error) };
+        let result = unsafe { (self.read_byte)(self.data) };
 
-        unsafe {
-            Self::wrap_err(error)?;
+        match result {
+            ReadResult::Ok(byte) => Ok(byte),
+            ReadResult::Err(error) => Err(unsafe { wrap_err(error) }),
         }
-        Ok(byte)
     }
+}
+
+unsafe fn wrap_err(maybe_error: *const c_char) -> TransportError {
+    let error = unsafe { CStr::from_ptr(maybe_error) };
+    TransportError(error.to_str().unwrap_or("<error with invalid utf8>"))
 }
 
 /// Install the debugger, communicating with GDB over the V5's USB serial port.
@@ -125,13 +139,19 @@ impl ConnectionExt for TransportImpl {
 pub extern "C" fn install_stdio() {
     self::log::init();
     static DEBUGGER: Once<V5Debugger<StdioTransport>> = Once::new();
-    DEBUGGER.call_once(|| V5Debugger::new(StdioTransport));
+    DEBUGGER.call_once(|| V5Debugger::new(StdioTransport::new()));
     v5gdb::install_by_ref(DEBUGGER.get().unwrap());
 }
 
 /// Install the debugger with a custom transport method for communicating with GDB.
+///
+/// # Safety
+///
+/// The transport's [`peek_byte`](TransportImpl::peek_byte) and
+/// [`read_byte`](TransportImpl::read_byte) implementations must be safe to call from an interrupt
+/// context.
 #[unsafe(export_name = "v5gdb_install_custom")]
-pub extern "C" fn install_custom(transport: TransportImpl) {
+pub unsafe extern "C" fn install_custom(transport: TransportImpl) {
     self::log::init();
     static DEBUGGER: Once<V5Debugger<TransportImpl>> = Once::new();
     DEBUGGER.call_once(|| V5Debugger::new(transport));

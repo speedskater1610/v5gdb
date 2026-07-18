@@ -1,8 +1,8 @@
-use gdbstub::target::{
+use gdbstub::{common::Tid, target::{
     TargetError, TargetResult, ext::base::single_register_access::SingleRegisterAccess,
-};
+}};
 
-use crate::gdb_target::{V5Target, arch::ArmRegisterID};
+use crate::{gdb_target::{V5Target, arch::ArmRegisterID}, sys::{DebuggerSystem, System}};
 
 impl SingleRegisterAccess<()> for V5Target {
     fn read_register(
@@ -22,7 +22,7 @@ impl SingleRegisterAccess<()> for V5Target {
         let ctx = &self.exception_ctx;
         match reg_id {
             ArmRegisterID::Gpr(rid) => {
-                let Some(reg) = ctx.registers.get(rid as usize).copied() else {
+                let Some(&reg) = ctx.registers.get(rid as usize) else {
                     return Err(TargetError::NonFatal);
                 };
                 read_reg!(buf, reg)
@@ -30,8 +30,14 @@ impl SingleRegisterAccess<()> for V5Target {
             ArmRegisterID::Sp => read_reg!(buf, ctx.stack_pointer),
             ArmRegisterID::Lr => read_reg!(buf, ctx.link_register),
             ArmRegisterID::Pc => read_reg!(buf, ctx.program_counter),
-            ArmRegisterID::Cpsr => read_reg!(buf, ctx.spsr.raw_value()),
-            _ => Err(TargetError::NonFatal),
+            ArmRegisterID::Cpsr => read_reg!(buf, ctx.cpsr.raw_value()),
+            ArmRegisterID::Fpr(rid) => {
+                let Some(&reg) = ctx.vfp_registers.get(rid as usize) else {
+                    return Err(TargetError::NonFatal);
+                };
+                read_reg!(buf, reg)
+            }
+            ArmRegisterID::Fpscr => read_reg!(buf, ctx.fpscr),
         }
     }
 
@@ -62,7 +68,7 @@ impl SingleRegisterAccess<()> for V5Target {
             ArmRegisterID::Sp => write_reg!(&mut ctx.stack_pointer, u32, val),
             ArmRegisterID::Lr => write_reg!(&mut ctx.link_register, u32, val),
             ArmRegisterID::Pc => write_reg!(&mut ctx.program_counter, u32, val),
-            ArmRegisterID::Cpsr => write_reg!(ctx.spsr.raw_value_mut(), u32, val),
+            ArmRegisterID::Cpsr => write_reg!(ctx.cpsr.raw_value_mut(), u32, val),
             ArmRegisterID::Fpr(rid) => {
                 let Some(reg) = ctx.vfp_registers.get_mut(rid as usize) else {
                     return Err(TargetError::NonFatal);
@@ -73,6 +79,41 @@ impl SingleRegisterAccess<()> for V5Target {
         }
 
         Ok(())
+    }
+}
+
+impl SingleRegisterAccess<Tid> for V5Target {
+    fn read_register(
+        &mut self,
+        tid: Tid,
+        reg_id: ArmRegisterID,
+        buf: &mut [u8],
+    ) -> TargetResult<usize, Self> {
+        if tid == System::current_thread() {
+            <Self as SingleRegisterAccess<()>>::read_register(self, (), reg_id, buf)
+        } else {
+            let reg = System::read_single_register(tid, reg_id)?;
+            reg.write_to_buffer(buf);
+            Ok(reg.bytes())
+        }
+    }
+
+    fn write_register(
+        &mut self,
+        tid: Tid,
+        reg_id: ArmRegisterID,
+        val: &[u8],
+    ) -> TargetResult<(), Self> {
+        if tid == System::current_thread() {
+            <Self as SingleRegisterAccess<()>>::write_register(self, (), reg_id, val)
+        } else {
+            let reg = SavedRegister::from_le_bytes(val).ok_or(TargetError::NonFatal)?;
+            // SAFETY: We trust that GDB will not corrupt system state.
+            unsafe {
+                System::write_single_register(tid, reg_id, reg)?;
+            }
+            Ok(())
+        }
     }
 }
 

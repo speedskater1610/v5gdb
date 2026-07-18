@@ -2,8 +2,7 @@
 
 #![allow(non_upper_case_globals)]
 
-use core::arch::asm;
-
+use aarch32_cpu::register::{SysReg, SysRegRead, SysRegWrite};
 use arbitrary_int::*;
 use bitbybit::{bitenum, bitfield};
 
@@ -189,28 +188,29 @@ pub struct SecureDebugEnable {
     secure_user_noninvasive_debug: bool,
 }
 
+impl SysReg for SecureDebugEnable {
+    const CP: u32 = 15;
+    const CRN: u32 = 1;
+    const OP1: u32 = 0;
+    const CRM: u32 = 1;
+    const OP2: u32 = 1;
+}
+
+impl SysRegRead for SecureDebugEnable {}
+impl SysRegWrite for SecureDebugEnable {}
+
 impl SecureDebugEnable {
     /// Read the current value.
     pub fn read() -> Self {
-        let value: u32;
-        unsafe {
-            asm!(
-                "mrc p15, 0, {value}, c1, c1, 1",
-                value = out(reg) value,
-                options(nostack, preserves_flags)
-            );
-        }
-        Self::new_with_raw_value(value)
+        // SAFETY: This is a valid register access wth no side effects.
+        Self::new_with_raw_value(unsafe { Self::read_raw() })
     }
 
     /// Update the current value.
     pub fn write(self) {
+        // SAFETY: This is a valid register access.
         unsafe {
-            asm!(
-                "mcr p15, 0, {value}, c1, c1, 1",
-                value = in(reg) self.raw_value(),
-                options(nostack, preserves_flags)
-            );
+            Self::write_raw(self.raw_value());
         }
     }
 }
@@ -287,8 +287,6 @@ pub struct DebugLogic {
     lock_access: u32,
     /// Indicates whether the debug software lock is active, which prevents accidental damage to
     /// the debug registers by disabling writes. It is on by default.
-    ///
-    /// This field is read-only. The software lock can be disabl
     #[mmio(PureRead)]
     lock_status: SoftwareLock,
     #[mmio(PureRead)]

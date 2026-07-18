@@ -1,47 +1,38 @@
 //! Main debugger loop and event handling logic.
 
-use core::{
-    convert::Infallible,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::{convert::Infallible, mem};
 
+use derive_more::From;
 use gdbstub::{
-    conn::{Connection, ConnectionExt},
+    conn::Connection,
     stub::{
         GdbStub, GdbStubBuilder, GdbStubError, MultiThreadStopReason, SingleThreadStopReason,
         state_machine::GdbStubStateMachine,
     },
 };
 use snafu::Snafu;
-use spin::{Mutex, MutexGuard, Once};
+use spin::{Mutex, MutexGuard};
+use static_cell::ConstStaticCell;
+use vex_sdk::vexSystemExitRequest;
 use zynq7000::devcfg;
 
 use crate::{
     Debugger,
-    cpu::debug::DebugEventReason,
-    debugger::sdk::InternalBreakpoint,
     exceptions::DebugEventContext,
-    gdb_target::{V5Target, breakpoint::hardware::Specificity},
+    gdb_target::{MonitorStatus, StopReason, V5Target},
     sdk::stop_all_motors,
     sys::{DebuggerSystem, System},
-    transport::TransportError,
+    transport::{Transport, TransportError},
 };
-
-pub mod sdk;
 
 #[derive(Debug, Snafu)]
 pub enum DebuggerError {
     #[snafu(context(false))]
     Io { source: TransportError },
+    #[snafu(context(false))]
     GdbStub {
-        inner: GdbStubError<Infallible, TransportError>,
+        source: GdbStubError<Infallible, TransportError>,
     },
-}
-
-impl From<GdbStubError<Infallible, TransportError>> for DebuggerError {
-    fn from(value: GdbStubError<Infallible, TransportError>) -> Self {
-        Self::GdbStub { inner: value }
-    }
 }
 
 /// Initial configuration for [`V5Debugger`].
@@ -61,11 +52,8 @@ pub struct DebuggerConfig {
 }
 
 /// Debugger manager.
-pub struct V5Debugger<S>
-where
-    S: Connection<Error = TransportError> + ConnectionExt,
-{
-    state: Mutex<DebuggerState<'static, S>>,
+pub struct V5Debugger<S: Transport> {
+    session: Mutex<DebugSession<'static, S>>,
     /// Initial settings applied to the debugger on [`Debugger::initialize`].
     ///
     /// After initialisation, the live values in [`V5Target`] are the source of truth and this
@@ -74,39 +62,30 @@ where
     config: DebuggerConfig,
 }
 
-impl<S> V5Debugger<S>
-where
-    S: Connection<Error = TransportError> + ConnectionExt,
-{
+impl<S: Transport> V5Debugger<S> {
     /// Creates a new debugger with default config.
+    ///
+    /// This function can only be called once per program run because the debugger will attempt to
+    /// claim a global packet buffer.
     #[must_use]
     pub fn new(stream: S) -> Self {
-        const GDB_PACKET_BUFFER_SIZE: usize = 4096;
-        static mut GDB_PACKET_BUFFER: [u8; GDB_PACKET_BUFFER_SIZE] = [0; _];
-        static GDB_PACKET_BUFFER_CLAIMED: AtomicBool = AtomicBool::new(false);
+        const PACKET_BUFFER_SIZE: usize = 4096;
+        // Stored as a global (in .bss) to help limit stack usage.
+        static PACKET_BUFFER: ConstStaticCell<[u8; PACKET_BUFFER_SIZE]> =
+            ConstStaticCell::new([0; PACKET_BUFFER_SIZE]);
 
-        if GDB_PACKET_BUFFER_CLAIMED.swap(true, Ordering::Acquire) {
-            panic!("Cannot create multiple debuggers");
-        }
-
-        // SAFETY: The mutable ownership over the buffer can only be taken once.
-        let gdb_buffer = unsafe {
-            core::slice::from_raw_parts_mut(&raw mut GDB_PACKET_BUFFER[0], GDB_PACKET_BUFFER_SIZE)
-        };
+        let pkt_buffer = PACKET_BUFFER.take();
 
         let target = V5Target::new(&mut unsafe { devcfg::Registers::new_mmio_fixed() });
 
         Self {
-            state: Mutex::new(DebuggerState {
-                gdb: {
-                    Some(
-                        GdbStubBuilder::new(stream)
-                            .with_packet_buffer(gdb_buffer)
-                            .build()
-                            .unwrap(),
-                    )
-                },
-                stub: None,
+            session: Mutex::new(DebugSession {
+                stage: SessionStage::Uninitialized(
+                    GdbStubBuilder::new(stream)
+                        .with_packet_buffer(pkt_buffer)
+                        .build()
+                        .unwrap(),
+                ),
                 target,
                 internal_breaks: None,
             }),
@@ -124,45 +103,18 @@ where
         self
     }
 
-    /// Sets whether all motors should be automatically stopped whenever a breakpoint fires.
-    ///
-    /// This sets [`DebuggerConfig::stop_motors_on_break`] and controls the *default* value of
-    /// `V5Target::stop_motors_on_break`. It is applied once at initialisation and has no effect
-    /// if changed after [`install`](crate::install) is called.
-    ///
-    /// Use `monitor autostop true` / `monitor autostop false` from GDB to toggle the setting
-    /// at runtime without restarting the program
-    ///
-    /// Defaults to `false`.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use v5gdb::{debugger::V5Debugger, transport::StdioTransport};
-    ///
-    /// v5gdb::install(V5Debugger::new(StdioTransport).with_motor_stop(true));
-    /// ```
-    #[must_use]
-    pub fn with_motor_stop(mut self, enabled: bool) -> Self {
-        self.config.stop_motors_on_break = enabled;
-        self
-    }
-
     /// Returns the debugger's internal state.
     #[must_use]
-    pub fn state<'a>(&'a self) -> MutexGuard<'a, DebuggerState<'static, S>> {
-        self.state.lock()
+    pub fn session<'a>(&'a self) -> MutexGuard<'a, DebugSession<'static, S>> {
+        self.session.lock()
     }
 }
 
-unsafe impl<S> Debugger for V5Debugger<S>
-where
-    S: Connection<Error = TransportError> + ConnectionExt + Send + 'static,
-{
+unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
     fn initialize(&self) {
-        let mut state = self.state();
-        state.register_internal_breakpoints();
-        System::initialize(&mut state.target);
+        let mut session = self.session();
+        session.register_internal_breakpoints();
+        System::initialize(&mut session.target);
         crate::sdk::competition::install_override();
 
         // apply the initial config into the live target state. from this point on, the values in
@@ -173,160 +125,202 @@ where
     }
 
     unsafe fn handle_debug_event(&self, ctx: &mut DebugEventContext) -> bool {
-        let mut state = self.state();
-        // Pause software breakpoints before allowing unpredictable control flow (by interrupts).
-        state.target.set_breakpoints_ignored(true);
+        let mut session = self.session();
 
-        // We re-enable interrupts after the abort (so that UART works) but prevent the RTOS from
-        // preempting us. When the debugger is active, the system should appear paused.
+        let stop_reason = session.target.enter_breakpoint(ctx);
 
-        // If we're handling a single-step completion, the scheduler is already disabled from when
-        // the step was initiated (previous debug session), so there's no need to do that again.
-        if state.target.single_step_request.is_none() {
-            System::suspend_preemption();
-        }
-        unsafe {
-            aarch32_cpu::interrupt::enable();
-        }
-
-        log::debug!("Entered debug event handler");
-        static BKPT_LOG: Once = Once::new();
-        BKPT_LOG.call_once(|| {
-            log::error!("**** v5gdb: BREAKPOINT TRIGGERED ****");
-            log::error!("Your program has been paused. Please connect a debugger.")
-        });
-
-        // Auto motor-stop on breakpoint.
-        //
-        // We read from `target.stop_motors_on_break` (not `self.config.stop_motors_on_break`)
-        // so that live changes via `monitor autostop true/false` take effect on the next
-        // breakpoint without restarting the program.
-        if state.target.stop_motors_on_break {
+        if session.target.stop_motors_on_break {
             log::debug!("Auto motor-stop triggered by breakpoint");
             stop_all_motors();
         }
 
-        let was_locked = state.target.hw_manager.locked();
-        state.target.hw_manager.set_locked(false);
-        state.target.exception_ctx = ctx.clone();
-
-        let reason = state.target.hw_manager.last_break_reason();
-
-        let bkpt_address = state.target.exception_ctx.program_counter;
-        let tracked_bkpt_id = state.target.query_sw_breakpoint(bkpt_address);
-
-        state.target.last_stop_was_hardcoded =
-            tracked_bkpt_id.is_none() && reason == Some(DebugEventReason::BkptInstr);
-
-        // If we previously wanted to single step, we can permanently remove the breakpoint that
-        // supported that now. The single step request is then cleared since we've finished all
-        // required cleanup.
-        if let Some(single_step) = state.target.single_step_request.take() {
-            state.target.hw_manager.remove_breakpoint_at(
-                single_step.target_addr,
-                Specificity::Mismatch,
-                single_step.kind,
-            );
-        }
-
-        if state.target.last_stop_was_hardcoded {
-            // Normally we try to avoid an infinite loop of breakpoints by replacing tracked
-            // software breakpoints with their real instructions and re-running them. But if the
-            // `bkpt` *is* the real instruction then we don't need to do the normal
-            // replace-and-rerun thing. Instead, we just skip over it because its side-effect has
-            // been completed.
-
-            // SAFETY: Since the address was able to be properly fetched, it implies it is valid for
-            // reads.
-            let instr = unsafe { state.target.exception_ctx.read_instr() };
-            state.target.exception_ctx.program_counter += instr.size() as u32;
-        }
-
-        let mut show_debug_console = true;
-
-        if let Some(id) = tracked_bkpt_id
-            && let Some(bkpt) = state.target.breaks[id]
-        {
-            // Some tracked breakpoints weren't requested by the user and are just used internally.
-            // These should be transparent to the user by default. Note: It's possible
-            // for a breakpoint to be both requested by the user and used internally.
-            show_debug_console = bkpt.reason.user;
-
-            // If this breakpoint is used internally, run any necessary callbacks.
-            if bkpt.reason.internal {
-                show_debug_console |= state.handle_internal_breakpoint();
-            }
-        }
-
-        if show_debug_console {
+        let action = session.handle_stop(stop_reason);
+        if action == StopAction::EnterMonitor {
             log::debug!("Starting debug console");
-            state.run_debug_console();
+            session.run_debug_console();
             log::debug!("Debug console has exited");
         }
 
-        // Write any modifications back to the stack so the assembly code restores the updated state
-        *ctx = state.target.exception_ctx.clone();
+        session.target.leave_breakpoint(ctx)
+    }
 
-        log::debug!("Exiting debug event handler");
+    fn poll(&self) {
+        // This runs in an interrupt context so it must be non-blocking and must not write to
+        // serial. Serial writes aren't IRQ-safe, and loggers tend to write to stdout (serial ch1),
+        // so also avoid logging here.
 
-        // Single steps run with the scheduler off so that we are guaranteed to step the current
-        // task, not a different one. - Side note: If PROS implemented ARM's context id register, we
-        // could just filter the single step breakpoint by task id and there would be no need for
-        // this.
-        let should_unpause_scheduler = state.target.single_step_request.is_none();
+        // A failed try_lock means the monitor is active. In that case the serial stream carries
+        // real GDB protocol traffic so we shouldn't touch it.
+        if let Some(mut session) = self.session.try_lock()
+            && let SessionStage::Active(gdb_state) = &mut session.stage
+            && let GdbStubStateMachine::Running(gdb) = gdb_state
+        {
+            const CTRL_C: u8 = 0x03;
 
-        state.target.hw_manager.set_locked(was_locked);
-        state.target.set_breakpoints_ignored(false);
-
-        should_unpause_scheduler
+            // While the program is running, GDB can send `0x03` (Interrupt) to request a pause.
+            // Search all pending bytes for interrupts.
+            while let Ok(Some(byte)) = gdb.borrow_conn().try_read() {
+                if byte == CTRL_C {
+                    session.target.request_interrupt();
+                    break;
+                }
+            }
+        }
     }
 }
 
-/// Internal mutable state of debugger.
-pub struct DebuggerState<'a, S>
+/// What shall be done after a breakpoint has been acknowledged.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum StopAction {
+    /// Return to the code that was previously executing.
+    Resume,
+    /// Pause the program and run the debug console.
+    EnterMonitor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InternalBreakpoint {
+    SystemExitRequest,
+}
+
+/// Handles the GDB protocol lifecycle.
+pub struct DebugSession<'a, S>
 where
-    S: Connection<Error = TransportError> + ConnectionExt,
+    S: Transport,
 {
     pub target: V5Target,
     internal_breaks: Option<[(InternalBreakpoint, u32); 1]>,
-    gdb: Option<GdbStub<'a, V5Target, S>>,
-    stub: Option<GdbStubStateMachine<'a, V5Target, S>>,
+    stage: SessionStage<'a, S>,
 }
 
-impl<S> DebuggerState<'_, S>
+#[derive(From)]
+enum SessionStage<'a, C: Connection> {
+    /// Remote has not yet connected / been configured.
+    Uninitialized(GdbStub<'a, V5Target, C>),
+    /// Session is running.
+    Active(GdbStubStateMachine<'a, V5Target, C>),
+    /// Placeholder while transitioning between states.
+    Transitioning,
+}
+
+impl<S> DebugSession<'_, S>
 where
-    S: Connection<Error = TransportError> + ConnectionExt,
+    S: Transport,
 {
     fn has_client(&self) -> bool {
-        let disconnected = matches!(
-            &self.stub,
-            None | Some(GdbStubStateMachine::Disconnected(_))
-        );
-        !disconnected
+        match &self.stage {
+            SessionStage::Active(GdbStubStateMachine::Disconnected(_)) => false,
+            SessionStage::Active(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Respond to entering a breakpoint and decide whether the user should be notified of it.
+    fn handle_stop(&mut self, reason: StopReason) -> StopAction {
+        // Tracked SW breakpoints are the only ones we ever allow to be "internal".
+        let StopReason::TrackedSoftwareBreak { id } = reason else {
+            return StopAction::EnterMonitor;
+        };
+
+        let breakpoint = self
+            .target
+            .breakpoint(id)
+            .expect("bkpt deleted before it could be handled");
+
+        // Internal breakpoint handlers might request to enter debug monitor.
+        let internal_action = if breakpoint.reason.internal {
+            self.handle_internal_breakpoint()
+        } else {
+            StopAction::Resume
+        };
+
+        // User-requested breakpoints always need to be shown because they were explicitly added.
+        if breakpoint.reason.user {
+            StopAction::EnterMonitor
+        } else {
+            internal_action
+        }
+    }
+
+    /// Run the handler for the internal breakpoint at the current PC, if any.
+    ///
+    /// Returns whether the debugger should enter the monitor even when the user didn't ask to stop
+    /// here.
+    fn handle_internal_breakpoint(&mut self) -> StopAction {
+        debug_assert!(self.target.breakpoints_ignored());
+
+        let pc = self.target.saved_ctx().program_counter;
+
+        let Some(&(id, addr)) = self
+            .internal_breaks
+            .iter()
+            .flatten()
+            .find(|&&(_id, addr)| addr == pc)
+        else {
+            return StopAction::Resume;
+        };
+
+        match id {
+            // This handler allows us to disconnect the GDB client cleanly before actually exiting.
+            InternalBreakpoint::SystemExitRequest => {
+                self.target.remove_sw_breakpoint(addr, true);
+
+                if !self.has_client() {
+                    // If there's no client connected, exit as normal without trying to tell GDB.
+                    return StopAction::Resume;
+                }
+
+                self.target.monitor_status = MonitorStatus::Exiting;
+
+                // Continue to the debug monitor - once GDB realizes we are exiting, it will
+                // disconnect and allow us to return back to calling vexSystemExitRequest.
+                StopAction::EnterMonitor
+            }
+        }
+    }
+
+    fn register_internal_breakpoints(&mut self) {
+        assert!(self.internal_breaks.is_none());
+
+        let exit_func = vexSystemExitRequest as *const () as u32;
+        let is_thumb = (exit_func & 1) != 0;
+        log::debug!("Register pre-exit handler (thumb={is_thumb})");
+
+        let internal_breaks = [(InternalBreakpoint::SystemExitRequest, exit_func & !1)];
+
+        for (_id, addr) in internal_breaks {
+            unsafe {
+                self.target
+                    .register_sw_breakpoint(addr, is_thumb, true)
+                    .unwrap();
+            }
+        }
+
+        self.internal_breaks = Some(internal_breaks);
     }
 
     /// Runs the debug console until the user indicates they want to continue program execution.
     fn run_debug_console(&mut self) {
-        if let Some(gdb) = self.gdb.take() {
-            // Initial GDB setup - calls connection setup callback.
-            self.stub = Some(gdb.run_state_machine(&mut self.target).unwrap());
-        }
-        let mut gdb = self.stub.take().unwrap();
-
-        // Enter debugging loop until it's time to resume.
-
-        self.target.reset_resume();
-        while !self.target.resume {
-            unsafe {
-                vex_sdk::vexTasksRun();
+        let stage = mem::replace(&mut self.stage, SessionStage::Transitioning);
+        match stage {
+            SessionStage::Uninitialized(gdb) => {
+                self.stage = gdb.run_state_machine(&mut self.target).unwrap().into();
+                self.run_debug_console();
             }
+            SessionStage::Active(mut state) => {
+                while self.target.monitor_status != MonitorStatus::ResumingProgram {
+                    unsafe {
+                        vex_sdk::vexTasksRun();
+                    }
 
-            gdb = Self::tick_state_machine(gdb, &mut self.target)
-                .expect("debugger encountered an error");
+                    state = Self::tick_state_machine(state, &mut self.target)
+                        .expect("debugger encountered an error");
+                }
+
+                self.stage = state.into();
+            }
+            SessionStage::Transitioning => panic!("Cannot resume from transitioning state"),
         }
-
-        self.target.resume = false;
-        self.stub = Some(gdb);
     }
 
     fn tick_state_machine<'a>(
@@ -342,13 +336,13 @@ where
                 }
             }
             GdbStubStateMachine::Running(gdb) => {
-                let reported_reason = target.get_stop_reason();
+                let reported_reason = target.gdb_stop_reason();
                 log::info!("Debugger Stop reason: {reported_reason:?}");
 
                 // Once we tell GDB we've exited we should exit the monitor because the session will
                 // end.
                 if matches!(reported_reason, MultiThreadStopReason::Exited(_)) {
-                    target.resume = true;
+                    target.monitor_status = MonitorStatus::ResumingProgram;
                 }
 
                 Ok(gdb.report_stop(target, reported_reason)?)
@@ -358,7 +352,15 @@ where
                 let stop_reason: Option<SingleThreadStopReason<_>> = None;
                 Ok(gdb.interrupt_handled(target, stop_reason)?)
             }
-            GdbStubStateMachine::Disconnected(gdb) => Ok(gdb.return_to_idle()),
+            GdbStubStateMachine::Disconnected(gdb) => {
+                // If we're about to exit the program, then GDB is probably disconnecting to let us
+                // do that. In that case, unpause and actually exit. Otherwise, stay in the debug
+                // monitor so a new GDB instance can pick up where we left off.
+                if target.monitor_status == MonitorStatus::Exiting {
+                    target.monitor_status = MonitorStatus::ResumingProgram;
+                }
+                Ok(gdb.return_to_idle())
+            }
         }
     }
 }

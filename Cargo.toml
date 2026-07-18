@@ -37,6 +37,12 @@ opt-level = "z"
 lto = false
 debug = true
 
+[profile.dev-opt]
+inherits = "dev"
+
+[profile.dev-opt.package."*"]
+opt-level = "z"
+
 # These fields configure default behavior for uploading examples with `cargo v5`.
 [package.metadata.v5]
 upload-strategy = "differential"
@@ -48,7 +54,7 @@ compress = true
 members = ["cli", "ffi", "xtask"]
 
 [workspace.dependencies]
-gdbstub = { version = "0.7.10", default-features = false }
+gdbstub = { version = "0.7.10", default-features = false, features = ["core_error"]}
 spin = { version = "0.10.0", default-features = false, features = [
     "mutex",
     "once",
@@ -65,8 +71,10 @@ spin.workspace = true
 log = "0.4.29"
 vex-sdk.workspace = true
 cfg-if = "1.0.4"
-bytemuck = { version = "1.25.0", features = ["derive"] }
+bytemuck = { version = "1.25.0", features = ["derive", "must_cast"] }
 owo-colors.workspace = true
+derive_more = { version = "2.1.1", features = ["from"], default-features = false }
+static_cell = { version = "2.1.0", default-features = false }
 
 [target."cfg(target_arch = \"arm\")".dependencies]
 zynq7000 = "0.2.0"

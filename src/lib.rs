@@ -12,26 +12,26 @@ use spin::Once;
 use crate::exceptions::DebugEventContext;
 
 pub mod cpu;
-#[cfg(target_arch = "arm")]
-pub mod debugger;
 pub mod exceptions;
-#[cfg(target_arch = "arm")]
-pub mod gdb_target;
-#[cfg(target_arch = "arm")]
-mod sdk;
 mod sys;
 pub mod transport;
 
-#[cfg(not(target_arch = "arm"))]
-pub mod debugger {
-    use gdbstub::conn::{Connection, ConnectionExt};
+cfg_select! {
+    target_arch = "arm" => {
+        pub mod gdb_target;
+        mod sdk;
+        pub mod debugger;
+    }
+    _ => {
+        pub use debugger_stub as debugger;
+    }
+}
 
-    use crate::{Debugger, transport::TransportError};
+#[allow(dead_code, reason = "only used on non-armv7a")]
+mod debugger_stub {
+    use crate::{Debugger, transport::Transport};
 
-    pub struct V5Debugger<S>
-    where
-        S: Connection<Error = TransportError> + ConnectionExt,
-    {
+    pub struct V5Debugger<S: Transport> {
         _stream: spin::Mutex<S>,
         config: DebuggerConfig,
     }
@@ -78,10 +78,7 @@ pub mod debugger {
         }
     }
 
-    unsafe impl<S> Debugger for V5Debugger<S>
-    where
-        S: Connection<Error = TransportError> + ConnectionExt + Send + 'static,
-    {
+    unsafe impl<S: Transport + Send + 'static> Debugger for V5Debugger<S> {
         fn initialize(&self) {}
 
         unsafe fn handle_debug_event(
@@ -115,6 +112,13 @@ pub unsafe trait Debugger: Send + Sync + Any {
     ///
     /// The given fault must represent valid, saved CPU state.
     unsafe fn handle_debug_event(&self, ctx: &mut DebugEventContext) -> bool;
+
+    /// An asynchronous callback which is run from an IRQ handler every few milliseconds.
+    ///
+    /// This is used to maintain the debugger and works even if user code becomes stuck or
+    /// misbehaves. Since this is called from an interrupt context, it must be non-blocking and
+    /// avoid operations that aren't thread-safe (such as writing to serial).
+    fn poll(&self) {}
 }
 
 /// Set the current debugger.

@@ -6,11 +6,9 @@ use spin::Mutex;
 
 use self::api::{TaskHandle_t, TaskStatus_t, UBaseType_t, eTaskState, pdFALSE};
 use crate::{
-    gdb_target::{
-        V5Target,
-        arch::{ArmRegisterID, ArmRegisters},
-        single_register_access::SavedRegister,
-    },
+    cpu::ProgramStatus,
+    exceptions::DebugEventContext,
+    gdb_target::{V5Target, arch::ArmRegisterID, single_register_access::SavedRegister},
     sys::{
         DebuggerSystem, SystemError,
         freertos::api::{BaseContext, FPUContext, SavedTaskContextFPU},
@@ -62,29 +60,24 @@ impl DebuggerSystem for FreeRtosSystem {
             .is_some_and(|task| task.eCurrentState != eTaskState::DELETED)
     }
 
-    fn read_registers(tid: Tid) -> Result<ArmRegisters, SystemError> {
+    fn read_registers(tid: Tid) -> Result<DebugEventContext, SystemError> {
         let task = lookup_saved_task(tid)?;
 
         // SAFETY: The task is valid and not running.
         let ctx = unsafe { task.saved_context().read() };
 
-        Ok(ArmRegisters {
-            r: ctx.base.gp_registers,
-            sp: unsafe { task.sp() },
-            lr: ctx.base.lr,
-            pc: ctx.base.pc,
-            cpsr: ctx.base.spsr,
-            // These unwraps will not panic because the two sub-arrays add together
-            // to the correct total length.
-            d: [ctx.fpu.d0_d15, ctx.fpu.d16_d31]
-                .as_flattened()
-                .try_into()
-                .unwrap(),
+        Ok(DebugEventContext {
+            registers: ctx.base.gp_registers,
+            stack_pointer: unsafe { task.sp() },
+            link_register: ctx.base.lr,
+            program_counter: ctx.base.pc,
+            cpsr: ProgramStatus::new_with_raw_value(ctx.base.spsr),
+            vfp_registers: bytemuck::must_cast([ctx.fpu.d0_d15, ctx.fpu.d16_d31]),
             fpscr: ctx.fpu.fpscr,
         })
     }
 
-    unsafe fn write_registers(tid: Tid, registers: &ArmRegisters) -> Result<(), SystemError> {
+    unsafe fn write_registers(tid: Tid, registers: &DebugEventContext) -> Result<(), SystemError> {
         let task = lookup_saved_task(tid)?;
 
         unsafe {
@@ -93,24 +86,27 @@ impl DebuggerSystem for FreeRtosSystem {
 
             // This will change the location of where the saved task context should be, so we have
             // to re-call `saved_context` to get the new location and write to it.
-            task.set_sp(registers.sp, false);
+            task.set_sp(registers.stack_pointer, false);
+
+            // FP registers are represented as u32s since they have a lower alignment.
+            type Reg = [u32; 2];
+            let [d0_d15, d16_d31]: &[[Reg; 16]; 2] =
+                bytemuck::must_cast_ref(&registers.vfp_registers);
 
             // SAFETY: Caller guarantees this is valid state for the task.
             let ctx = task.saved_context();
             ctx.write(SavedTaskContextFPU::new(
                 FPUContext {
                     fpscr: registers.fpscr,
-                    // These unwraps will not panic because the range indexing returns
-                    // the correct size of array.
-                    d16_d31: *registers.d[16..=31].as_array().unwrap(),
-                    d0_d15: *registers.d[0..=15].as_array().unwrap(),
+                    d16_d31: *d16_d31,
+                    d0_d15: *d0_d15,
                 },
                 BaseContext {
                     ulCriticalNesting: critical_nesting,
-                    gp_registers: registers.r,
-                    lr: registers.lr,
-                    pc: registers.pc,
-                    spsr: registers.cpsr,
+                    gp_registers: registers.registers,
+                    lr: registers.link_register,
+                    pc: registers.program_counter,
+                    spsr: registers.cpsr.raw_value(),
                 },
             ));
         };
@@ -129,11 +125,11 @@ impl DebuggerSystem for FreeRtosSystem {
                 ArmRegisterID::Pc => SavedRegister::U32((*ctx).base.pc),
                 ArmRegisterID::Cpsr => SavedRegister::U32((*ctx).base.spsr),
                 ArmRegisterID::Fpr(i) => SavedRegister::U64({
-                    if let Some(i) = i.checked_sub(16) {
+                    bytemuck::must_cast(if let Some(i) = i.checked_sub(16) {
                         (*ctx).fpu.d16_d31[i as usize]
                     } else {
                         (*ctx).fpu.d0_d15[i as usize]
-                    }
+                    })
                 }),
                 ArmRegisterID::Fpscr => SavedRegister::U32((*ctx).fpu.fpscr),
                 ArmRegisterID::Sp => SavedRegister::U32(task.sp()),
@@ -157,9 +153,9 @@ impl DebuggerSystem for FreeRtosSystem {
                 ArmRegisterID::Cpsr => (*ctx).base.spsr = value.unwrap_u32(),
                 ArmRegisterID::Fpr(i) => {
                     if let Some(i) = i.checked_sub(16) {
-                        (*ctx).fpu.d16_d31[i as usize] = value.unwrap_u64();
+                        (*ctx).fpu.d16_d31[i as usize] = bytemuck::must_cast(value.unwrap_u64());
                     } else {
-                        (*ctx).fpu.d0_d15[i as usize] = value.unwrap_u64();
+                        (*ctx).fpu.d0_d15[i as usize] = bytemuck::must_cast(value.unwrap_u64());
                     }
                 }
                 ArmRegisterID::Fpscr => (*ctx).fpu.fpscr = value.unwrap_u32(),
@@ -206,8 +202,12 @@ impl DebuggerSystem for FreeRtosSystem {
                 for task in scan_tasks() {
                     let marker = if task.xHandle == current { "*" } else { " " };
                     let id = task.xTaskNumber;
-                    // SAFETY: FreeRTOS guarantees this string is valid.
-                    let name = unsafe { CStr::from_ptr(task.pcTaskName) };
+                    let name = if task.pcTaskName.is_null() {
+                        c"<none>"
+                    } else {
+                        // SAFETY: FreeRTOS guarantees this string is valid.
+                        unsafe { CStr::from_ptr(task.pcTaskName) }
+                    };
 
                     let state = match task.eCurrentState {
                         eTaskState::BLOCKED => "Blocked".style(Style::new().yellow()),

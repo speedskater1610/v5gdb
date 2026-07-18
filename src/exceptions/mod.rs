@@ -1,14 +1,13 @@
 use crate::cpu::ProgramStatus;
 
-/// The saved state of a program from before an exception.
+/// All the data captured during an exception about the previous state of the program.
 ///
-/// Note that updating these fields will cause the exception handler to apply the changes to the CPU
-/// if/when the current exception handler returns.
-#[derive(Debug, Clone, Default)]
+/// These fields are placed in a specific order so that `overlay.S` builds the struct properly.
+#[derive(Debug, Clone, Default, PartialEq)]
 #[repr(C)]
 pub struct DebugEventContext {
-    /// The saved program status register (spsr) from before the exception.
-    pub spsr: ProgramStatus,
+    /// The Program Status Register from before the exception.
+    pub cpsr: ProgramStatus,
     /// The stack pointer from before the exception.
     pub stack_pointer: u32,
     /// The link register from before the exception.
@@ -29,6 +28,65 @@ pub struct DebugEventContext {
     pub program_counter: u32,
 }
 
+impl Registers for DebugEventContext {
+    type ProgramCounter = u32;
+
+    fn pc(&self) -> Self::ProgramCounter {
+        self.program_counter
+    }
+
+    fn gdb_serialize(&self, mut write_byte: impl FnMut(Option<u8>)) {
+        let mut send = move |bytes: &[u8]| {
+            for &b in bytes {
+                write_byte(Some(b));
+            }
+        };
+
+        for r in self.registers {
+            send(&r.to_le_bytes());
+        }
+
+        send(&self.stack_pointer.to_le_bytes());
+        send(&self.link_register.to_le_bytes());
+        send(&self.program_counter.to_le_bytes());
+        send(&self.cpsr.raw_value().to_le_bytes());
+
+        for d in self.vfp_registers {
+            send(&d.to_le_bytes());
+        }
+
+        send(&self.fpscr.to_le_bytes());
+    }
+
+    fn gdb_deserialize(&mut self, mut bytes: &[u8]) -> Result<(), ()> {
+        fn read<const N: usize>(bytes: &mut &[u8]) -> Result<[u8; N], ()> {
+            let Some((left, right)) = bytes.split_at_checked(N) else {
+                return Err(());
+            };
+            *bytes = right;
+
+            Ok(<[u8; N]>::try_from(left).unwrap())
+        }
+
+        for r in &mut self.registers {
+            *r = u32::from_le_bytes(read(&mut bytes)?);
+        }
+
+        self.stack_pointer = u32::from_le_bytes(read(&mut bytes)?);
+        self.link_register = u32::from_le_bytes(read(&mut bytes)?);
+        self.program_counter = u32::from_le_bytes(read(&mut bytes)?);
+        self.cpsr = ProgramStatus::new_with_raw_value(u32::from_le_bytes(read(&mut bytes)?));
+
+        for d in &mut self.vfp_registers {
+            *d = u64::from_le_bytes(read(&mut bytes)?);
+        }
+
+        self.fpscr = u32::from_le_bytes(read(&mut bytes)?);
+
+        Ok(())
+    }
+}
+
 #[cfg(target_arch = "arm")]
 pub(crate) mod arm {
     use core::{
@@ -36,7 +94,7 @@ pub(crate) mod arm {
         array,
         ffi::c_void,
         mem::MaybeUninit,
-        sync::atomic::{AtomicBool, Ordering},
+        sync::atomic::{AtomicBool, AtomicU32, Ordering},
     };
 
     use aarch32_cpu::asm::dsb;
@@ -52,7 +110,7 @@ pub(crate) mod arm {
         ".set FREERTOS, 1",
         #[cfg(feature = "pros")]
         ".set PROS, 1",
-        include_str!("./overlay.S"),
+        include_str!("./overlay.s"),
         options(raw),
     );
 
@@ -77,9 +135,39 @@ pub(crate) mod arm {
     ///
     /// The callee must always resume the system scheduler after calling this function.
     #[unsafe(export_name = "v5gdb_handle_debug_event")]
-    #[cfg_attr(target_os = "vexos", instruction_set(arm::a32))]
     pub unsafe extern "aapcs" fn handle_debug_event(ctx: *mut DebugEventContext) -> bool {
         unsafe { DEBUGGER.get().unwrap().handle_debug_event(&mut *ctx) }
+    }
+
+    /// Minimum interval, in milliseconds, between calls to `Debugger::poll`.
+    const IRQ_POLL_INTERVAL_MS: u32 = 10;
+
+    /// The system time (ms) at which the IRQ hook last ran `Debugger::poll`.
+    static LAST_POLL_TIME_MS: AtomicU32 = AtomicU32::new(0);
+
+    /// IRQ handler callback.
+    ///
+    /// This is called from `v5gdb_irq_handler` at the beginning of every IRQ exception and is
+    /// responsible for periodically invoking [`Debugger::poll`](crate::Debugger::poll).
+    ///
+    /// # Notes
+    ///
+    /// This runs in interrupt context on VEXos's 8 KiB IRQ-mode stack, so it must remain fairly
+    /// lightweight with no allocation or blocking or calls to non-thread-safe functions.
+    #[unsafe(export_name = "v5gdb_irq_poll")]
+    pub extern "aapcs" fn irq_poll() {
+        let now = unsafe { vex_sdk::vexSystemTimeGet() };
+        let last = LAST_POLL_TIME_MS.load(Ordering::Relaxed);
+
+        // `wrapping_sub` keeps this correct across a u32 millisecond wraparound.
+        if now.wrapping_sub(last) < IRQ_POLL_INTERVAL_MS {
+            return;
+        }
+        LAST_POLL_TIME_MS.store(now, Ordering::Relaxed);
+
+        if let Some(debugger) = DEBUGGER.get() {
+            debugger.poll();
+        }
     }
 
     static ORIGINAL_VECTOR_ADDRESSES_SET: AtomicBool = AtomicBool::new(false);
@@ -140,18 +228,13 @@ pub(crate) mod arm {
         ///
         /// # Safety
         ///
-        /// The caller must ensure the return address is valid for reads. This might not be the case
-        /// if, for example, the exception was a prefetch abort caused by the instruction
+        /// The caller must ensure the return address is valid for volatile reads. This might not be
+        /// the case if, for example, the exception was a prefetch abort caused by the instruction
         /// being inaccessible.
         #[must_use]
         pub unsafe fn read_instr(&self) -> Instruction {
-            if self.spsr.thumb() {
-                let ptr = self.program_counter as *mut u16;
-                Instruction::Thumb(unsafe { ptr.read_volatile() })
-            } else {
-                let ptr = self.program_counter as *mut u32;
-                Instruction::Arm(unsafe { ptr.read_volatile() })
-            }
+            let ptr = self.program_counter as *mut u32;
+            unsafe { Instruction::read(ptr, self.cpsr.thumb()) }
         }
 
         /// Load the address or instruction which the faulting instruction attempted to operate on.
@@ -179,3 +262,4 @@ pub(crate) mod arm {
 
 #[cfg(target_arch = "arm")]
 pub use arm::*;
+use gdbstub::arch::Registers;

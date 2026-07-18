@@ -48,12 +48,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let known_gdb_names = ["arm-none-eabi-gdb", "gdb-multiarch", "gdb"];
-    let mut resolved_gdb = None;
-    for name in known_gdb_names {
-        if let Ok(path) = which(name) {
-            resolved_gdb = Some(path);
-        }
-    }
+    let resolved_gdb = known_gdb_names.into_iter().find_map(|n| which(n).ok());
 
     let Some(resolved_gdb) = resolved_gdb else {
         eprintln!("Error: One of the following GDB executables must be installed.");
@@ -74,7 +69,49 @@ async fn main() -> anyhow::Result<()> {
     cmd.arg("--eval-command=target remote :35537");
 
     let mut gdb = cmd.spawn()?;
-    gdb.wait().await?;
+
+    cfg_select! {
+        // On Unix, ignore SIGINT (Ctrl-C) since it's delivered to the whole foreground process
+        // group including GDB, which has its own logic to handle signals.
+        unix => {
+            use tokio::signal::unix::{SignalKind, signal};
+
+            let mut sigint = signal(SignalKind::interrupt())?;
+            let mut sigterm = signal(SignalKind::terminate())?;
+
+            loop {
+                tokio::select! {
+                    status = gdb.wait() => {
+                        status?;
+                        break;
+                    }
+                    _ = sigint.recv() => {}
+                    _ = sigterm.recv() => {}
+                }
+            }
+        }
+        // It's similar on Windows but we receive a Ctrl-C event / a Ctrl-Break event instead.
+        windows => {
+            use tokio::signal::windows::{ctrl_break, ctrl_c};
+
+            let mut ctrl_c = ctrl_c()?;
+            let mut ctrl_break = ctrl_break()?;
+
+            loop {
+                tokio::select! {
+                    status = gdb.wait() => {
+                        status?;
+                        break;
+                    }
+                    _ = ctrl_c.recv() => {}
+                    _ = ctrl_break.recv() => {}
+                }
+            }
+        }
+        _ => {
+            gdb.wait().await?;
+        }
+    }
 
     Ok(())
 }
@@ -142,7 +179,10 @@ async fn serve_device_serial(
                                 incoming_bytes = &incoming_bytes[1..];
                                 decoder.reset();
                             },
-                            _ => {}
+                            Ok(None) => {
+                                // The frame is split across reads, wait for more data.
+                                break;
+                            }
                         }
                     }
                 }
@@ -155,7 +195,12 @@ async fn serve_device_serial(
                             println!("< {}", String::from_utf8_lossy(&program_input[..size]));
                         }
 
-                        connection.write_user(&program_input[..size]).await.unwrap();
+                        if let Err(err) = connection.write_user(&program_input[..size]).await {
+                            // The device was likely unplugged. Exit cleanly instead of
+                            // panicking on the failed write.
+                            eprintln!("Device disconnected: {err}");
+                            break;
+                        }
                     }
                     _ => {}
                 }
