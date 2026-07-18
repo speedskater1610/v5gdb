@@ -2,7 +2,6 @@ use core::{iter, str::FromStr};
 
 use gdbstub::target::ext::monitor_cmd::{ConsoleOutput, MonitorCmd};
 use log::LevelFilter;
-use vex_sdk::*;
 
 use crate::{
     gdb_target::V5Target,
