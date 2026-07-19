@@ -94,7 +94,7 @@ async fn main(_peripherals: Peripherals) {
     //
     // (gdb) monitor autostop false
 
-    v5gdb::install(V5Debugger::new(StdioTransport).with_config(DebuggerConfig {
+    v5gdb::install(V5Debugger::new(StdioTransport::new()).with_config(DebuggerConfig {
         stop_motors_on_break: true,
         ..Default::default()
     }));
