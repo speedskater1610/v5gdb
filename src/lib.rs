@@ -53,7 +53,7 @@ mod debugger_stub {
         pub stop_motors_on_break: bool,
     }
 
-    impl<S: Connection<Error = TransportError> + ConnectionExt> V5Debugger<S> {
+    impl<S: Transport> V5Debugger<S> {
         /// Creates a new debugger with default configuration.
         #[must_use]
         pub fn new(stream: S) -> Self {

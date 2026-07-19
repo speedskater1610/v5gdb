@@ -61,33 +61,6 @@ pub enum StopReason {
     UntrackedSoftwareBreak,
     /// The host asynchronously requested a halt while the program was running.
     ///
-    /// If this goes back to `false`, an exit has been acknowledged by GDB.
-    pub exiting: bool,
-
-    /// Indicates whether the most recent program stop occurred due to a hardcoded breakpoint
-    /// (`bkpt` instruction).
-    pub last_stop_was_hardcoded: bool,
-
-    /// Indicates whether new software breakpoints should be enabled.
-    pub breaks_paused: bool,
-    /// The list of breakpoints.
-    pub breaks: [Option<SwBreakpoint>; 16],
-    pub hw_manager: HwBreakpointManager,
-    /// If set, breakpoints are being used to single step. Report any hardware breaks as single
-    /// steps instead of normal breakpoints.
-    pub single_step_request: Option<SingleStepRequest>,
-
-    /// When `true`, all motors are stopped when a breakpoint is triggered.
-    ///
-    /// This prevents the robot from moving while the debugger has paused
-    /// execution. It can be toggled at runtime with the GDB monitor commands:
-    ///
-    /// `monitor autostop true` / `monitor autostop false`,
-    /// or configured at startup via
-    /// [`crate::debugger::V5Debugger::with_motor_stop`].
-    ///
-    /// Defaults to `false`.
-    pub stop_motors_on_break: bool,
     /// This can happen if the user presses Ctrl-C in GDB to pause the program.
     Interrupt,
     /// The program stopped for some other reason.
@@ -155,6 +128,7 @@ pub struct V5Target {
     /// If set, the next instruction executed in user code will trigger entry into the debug
     /// monitor and be reported to GDB as SIGINT.
     interrupt_pending: bool,
+    stop_motors_on_break: bool,
 }
 
 impl V5Target {

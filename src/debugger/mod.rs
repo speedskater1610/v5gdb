@@ -117,9 +117,9 @@ unsafe impl<S: Transport + 'static> Debugger for V5Debugger<S> {
         System::initialize(&mut session.target);
         crate::sdk::competition::install_override();
 
-        // apply the initial config into the live target state. from this point on, the values in
+        // Apply the initial config into the live target state. from this point on, the values in
         // V5Target are the source of truth so `self.config` is never read again.
-        state.target.stop_motors_on_break = self.config.stop_motors_on_break;
+        session.target.stop_motors_on_break = self.config.stop_motors_on_break;
 
         log::debug!("Debugger initialized (config={:?})", self.config);
     }
