@@ -94,10 +94,12 @@ async fn main(_peripherals: Peripherals) {
     //
     // (gdb) monitor autostop false
 
-    v5gdb::install(V5Debugger::new(StdioTransport::new()).with_config(DebuggerConfig {
-        stop_motors_on_break: true,
-        ..Default::default()
-    }));
+    v5gdb::install(
+        V5Debugger::new(StdioTransport::new()).with_config(DebuggerConfig {
+            stop_motors_on_break: true,
+            ..Default::default()
+        }),
+    );
 
     // Spin motors so you can watch the motors running
     println!("Spinning motors at +6 V for 2 s...");
